@@ -140,11 +140,35 @@ systemctl --user status hermes-gateway
 
 - Interface: `tunnel`
 - Endpoint: `11434`
-- Purpose: Outbound connection to an Ollama-compatible OpenAI endpoint.
-  Wire to an `ollama` workshop's `ollama-server` slot, or to a host port
-  serving vLLM / LiteLLM / etc. The default `config.yaml` points at
-  `http://localhost:11434/v1`, which resolves correctly through the
-  tunnel.
+- Purpose: Outbound connection to an Ollama-compatible OpenAI endpoint
+  running in **another workshop on the same host** (e.g. an `ollama`
+  workshop's `ollama-server` slot). When connected, the default
+  `config.yaml` URL `http://localhost:11434/v1` resolves correctly
+  through the tunnel.
+
+#### Using Ollama on a different machine on your LAN
+
+The tunnel plug only bridges to *other workshops on the same host* — it
+does not reach out to arbitrary network endpoints. If your Ollama (or
+vLLM, LiteLLM, …) runs on a different machine (e.g.
+`http://ozymandias:11434/v1`), leave the plug **unconnected** and edit
+the URL directly:
+
+```bash
+workshop shell
+sed -i 's|http://localhost:11434/v1|http://ozymandias:11434/v1|' \
+    ~/.hermes/config.yaml
+systemctl --user restart hermes-gateway
+```
+
+The workshop's outbound network reaches the LAN normally, so no plug is
+needed for this case.
+
+#### Using a remote provider (OpenAI / Anthropic / OpenRouter)
+
+Same pattern: leave the plug unconnected, edit `~/.hermes/config.yaml`
+to set `model.provider`, `model.base_url`, and add the matching
+`API_KEY` to `~/.hermes/.env`.
 
 ## Slots (resources this SDK provides)
 
