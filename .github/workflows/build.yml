@@ -10,9 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  # amd64 — Canonical's default self-hosted x64 pool. The reusable workflow
+  # handles LXD + sdkcraft installs via sudo.
+  build-amd64:
     uses: canonical/sdkcraft-actions/.github/workflows/build.yml@main
-    with:
-      # Self-hosted arm64 runner. Cross-packs both platforms via plugin: nil
-      # parts. Override these labels if/when more runners are wired in.
-      runs-on: '["self-hosted","arm64"]'
+
+  # arm64 — self-hosted ozymandias runner. No sudo on the runner; LXD and
+  # sdkcraft are pre-installed on the host (see upload.yml for the one-time
+  # host-setup commands). PR validation only — packs but doesn't upload.
+  build-arm64:
+    runs-on: [self-hosted, arm64]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Pack SDK for arm64
+        run: sdkcraft --verbose pack --build-for arm64

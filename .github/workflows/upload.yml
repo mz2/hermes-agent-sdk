@@ -16,17 +16,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-upload:
+  # amd64 — Canonical's default self-hosted x64 pool. The reusable workflow
+  # handles LXD install + sdkcraft install via sudo (which that pool has).
+  build-and-upload-amd64:
     uses: canonical/sdkcraft-actions/.github/workflows/upload.yml@main
     with:
-      # Both arches publish to the store from the self-hosted arm64 runner.
-      # SDK parts are plugin: nil, so sdkcraft pack just bundles metadata
-      # + hooks + services — the runner cross-packs amd64 from arm64
-      # without trouble. `runs-on` is a single JSON array used for every
-      # matrix entry; to route arches to different runners, split this
-      # into two jobs with separate `runs-on`.
-      runs-on: '["self-hosted","arm64"]'
-      platforms: '["amd64","arm64"]'
+      platforms: '["amd64"]'
       risk: "stable"
     secrets:
       SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
+
+  # arm64 — self-hosted ozymandias runner. The runner user has no sudo, so
+  # this job skips the canonical reusable workflow (whose LXD + sdkcraft
+  # install steps require sudo) and instead assumes both are already on
+  # the host. Required host setup, one-time:
+  #
+  #   sudo snap install lxd --channel=6/stable
+  #   sudo snap install sdkcraft --classic
+  #   sudo usermod -aG lxd <runner-user>     # so managed-mode sdkcraft pack
+  #                                          # can drive LXD without sudo
+  #   newgrp lxd                              # or re-login the runner user
+  build-and-upload-arm64:
+    runs-on: [self-hosted, arm64]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Define track name
+        run: |
+          TRACK="${INPUT_BRANCH:-${GITHUB_REF#refs/heads/}}"
+          echo "TRACK=$TRACK" >> "$GITHUB_ENV"
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+
+      - name: Pack SDK for arm64
+        run: sdkcraft --verbose pack --build-for arm64
+
+      - name: Upload arm64 SDK
+        env:
+          SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
+        run: |
+          for sdk in *.sdk; do
+            sdkcraft --verbose upload "$sdk" --release "${TRACK}/stable"
+          done
