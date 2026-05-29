@@ -5,15 +5,15 @@
 # (a) Test a locally-built SDK during development:
 #       cd ..                       # repo root
 #       git checkout latest
-#       sdkcraft try                # registers it locally as `try-hermes`
+#       sdkcraft try                # registers it locally as `try-hermes-agent`
 #       cd examples
 #       workshop launch --verbose
-#     and set:    `name: try-hermes`
+#     and set:    `name: try-hermes-agent`
 #
 # (b) Use the published SDK (after `sdkcraft upload`):
 #       cd examples
 #       workshop launch --verbose
-#     and set:    `name: hermes` + `channel: latest/stable`
+#     and set:    `name: hermes-agent` + `channel: latest/stable`
 #
 # First launch takes ~5–10 minutes — Hermes clones, the Python 3.11 venv
 # builds, Node 22 + Playwright Chromium download. Refreshes after that
@@ -23,9 +23,9 @@ name: hermes-example
 base: ubuntu@24.04
 
 sdks:
-  - name: try-hermes
+  - name: try-hermes-agent
     # Swap to the published form when releasing:
-    # name: hermes
+    # name: hermes-agent
     # channel: latest/stable
 
   # The system SDK exposes a tunnel slot pointing at the LLM backend on
@@ -44,7 +44,7 @@ sdks:
 # the SDK-provisioned config.yaml) now reaches the host's Ollama through
 # the tunnel — no config edit needed.
 connections:
-  - plug: try-hermes:llm-backend
+  - plug: try-hermes-agent:llm-backend
     slot: system:llm-backend
 
 actions:

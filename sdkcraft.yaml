@@ -1,5 +1,5 @@
-name: hermes
-adopt-info: hermes
+name: hermes-agent
+adopt-info: hermes-agent
 summary: Hermes Agent — self-improving AI agent from Nous Research
 description: |
   This SDK provides the Hermes Agent (https://github.com/NousResearch/hermes-agent),
@@ -95,7 +95,7 @@ parts:
   # + npm) happens in hooks/setup-project because (a) the upstream installer needs
   # internet at runtime, (b) state lives under the persisted `hermes-home` mount,
   # and (c) the install pattern matches JupyterLab (Python source, dynamic install).
-  hermes:
+  hermes-agent:
     plugin: nil
     override-pull: |
       VERSION=$(cat "$CRAFT_PROJECT_DIR/VERSION")
