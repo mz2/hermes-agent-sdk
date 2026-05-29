@@ -17,6 +17,39 @@ description: |
   Configure messaging credentials in `~/.hermes/.env` after launch — the
   health check reports `waiting` until the gateway successfully connects.
 
+  Example workshop.yaml — wire the agent to an Ollama-compatible endpoint
+  on the host (the `system` SDK exposes the host port as a tunnel slot):
+
+    name: hermes-dev
+    base: ubuntu@24.04
+
+    sdks:
+      - name: hermes-agent
+        channel: latest/stable
+      - name: system
+        slots:
+          llm-backend:
+            interface: tunnel
+            endpoint: localhost:11434   # Ollama / vLLM / LiteLLM on the host
+
+    connections:
+      - plug: hermes-agent:llm-backend
+        slot: system:llm-backend
+
+    actions:
+      chat: hermes chat "$@"
+
+  Launch, then connect the LLM tunnel once (tunnels do not auto-connect):
+
+    workshop launch
+    workshop connect hermes-dev/hermes-agent:llm-backend \
+                     hermes-dev/system:llm-backend
+    workshop run hermes-dev chat
+
+  To use a remote provider (OpenAI / Anthropic / OpenRouter) instead, drop
+  the `system` slot and `connections:`, then set `model.base_url` in
+  `~/.hermes/config.yaml` and add the API key to `~/.hermes/secrets/.env`.
+
 license: GPL-3.0-only
 
 build-base: ubuntu@24.04
@@ -100,6 +133,12 @@ parts:
     override-pull: |
       VERSION=$(cat "$CRAFT_PROJECT_DIR/VERSION")
       craftctl set version="$VERSION"
+    # Ship the VERSION file into the SDK payload (lands at $SDK/VERSION,
+    # same root as the dumped hermes-gateway.service). setup-project reads
+    # it at runtime to pin the hermes-agent clone/checkout.
+    override-build: |
+      craftctl default
+      install -D -m 644 "$CRAFT_PROJECT_DIR/VERSION" "$CRAFT_PART_INSTALL/VERSION"
 
   # Bundled systemd unit file. Dumped into the SDK so setup-project can install
   # it under ~/.config/systemd/user/.

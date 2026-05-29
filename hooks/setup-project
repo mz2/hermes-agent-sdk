@@ -97,7 +97,7 @@ if [ ! -f "$HERMES_HOME/config.yaml" ]; then
 # Edit freely; subsequent refreshes won't overwrite this file.
 model:
   provider: custom
-  default: nemotron3:33b
+  default: qwen3.6:35b
   # Wired through the SDK's `llm-backend` tunnel plug. Connect that plug to
   # an Ollama-compatible OpenAI endpoint (Ollama itself, vLLM, LiteLLM, etc.)
   # and this endpoint will resolve correctly.
