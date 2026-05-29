@@ -16,27 +16,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # amd64 — Canonical's default self-hosted x64 pool. The reusable workflow
-  # handles LXD install + sdkcraft install via sudo (which that pool has).
-  build-and-upload-amd64:
-    uses: canonical/sdkcraft-actions/.github/workflows/upload.yml@main
-    with:
-      platforms: '["amd64"]'
-      risk: "stable"
-    secrets:
-      SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
+  # amd64 — GitHub-hosted ubuntu-latest. Has passwordless sudo, so we can
+  # install LXD and sdkcraft per-run. Free for public repos; counts against
+  # Actions minutes on private repos.
+  publish-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
-  # arm64 — self-hosted ozymandias runner. The runner user has no sudo, so
-  # this job skips the canonical reusable workflow (whose LXD + sdkcraft
-  # install steps require sudo) and instead assumes both are already on
-  # the host. Required host setup, one-time:
+      - name: Install LXD
+        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 6/stable
+
+      - name: Install sdkcraft
+        run: sudo snap install sdkcraft --classic
+
+      - name: Define track name
+        run: |
+          TRACK="${INPUT_BRANCH:-${GITHUB_REF#refs/heads/}}"
+          echo "TRACK=$TRACK" >> "$GITHUB_ENV"
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+
+      - name: Pack SDK for amd64
+        run: sdkcraft --verbose pack --build-for amd64
+
+      - name: Upload amd64 SDK
+        env:
+          SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
+        run: |
+          for sdk in *.sdk; do
+            sdkcraft --verbose upload "$sdk" --release "${TRACK}/stable"
+          done
+
+  # arm64 — self-hosted ozymandias runner. The runner user (`runner`) needs
+  # one-time host setup (run once by operator with sudo):
   #
-  #   sudo snap install lxd --channel=6/stable
-  #   sudo snap install sdkcraft --classic
-  #   sudo usermod -aG lxd <runner-user>     # so managed-mode sdkcraft pack
-  #                                          # can drive LXD without sudo
-  #   newgrp lxd                              # or re-login the runner user
-  build-and-upload-arm64:
+  #   sudo snap install sdkcraft --classic          # already done
+  #   sudo snap install lxd --channel=6/stable      # if not already
+  #   sudo usermod -aG lxd runner                   # for sdkcraft pack →
+  #                                                 # /var/snap/lxd/common/lxd/unix.socket
+  #   # then restart the runner so the new group is in effect
+  #
+  # No per-run sudo. sdkcraft pack runs in managed mode (LXD).
+  publish-arm64:
     runs-on: [self-hosted, arm64]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
