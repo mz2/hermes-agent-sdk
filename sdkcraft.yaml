@@ -100,6 +100,12 @@ parts:
     override-pull: |
       VERSION=$(cat "$CRAFT_PROJECT_DIR/VERSION")
       craftctl set version="$VERSION"
+    # Ship the VERSION file into the SDK payload (lands at $SDK/VERSION,
+    # same root as the dumped hermes-gateway.service). setup-project reads
+    # it at runtime to pin the hermes-agent clone/checkout.
+    override-build: |
+      craftctl default
+      install -D -m 644 "$CRAFT_PROJECT_DIR/VERSION" "$CRAFT_PART_INSTALL/VERSION"
 
   # Bundled systemd unit file. Dumped into the SDK so setup-project can install
   # it under ~/.config/systemd/user/.

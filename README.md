@@ -47,6 +47,77 @@ and add the API key to `~/.hermes/.env`.
 
 ---
 
+## Local development — run the example from a local build
+
+This is the verified end-to-end runbook for trying a locally-built SDK
+(no Store upload). It uses `examples/workshop.yaml`, which pairs the SDK
+with a `system` tunnel slot pointing at an Ollama on the host.
+
+### Prerequisites
+
+- The Workshop snap (provides `workshop`, `sdk`, and `sdkcraft`).
+- An OpenAI-compatible LLM endpoint reachable from the host — e.g. Ollama
+  listening on `localhost:11434`. The default `config.yaml` requests model
+  `qwen3.6:35b`; `ollama pull qwen3.6:35b` (or edit the model in
+  `~/.hermes/config.yaml`) so the agent has something to talk to.
+
+### Steps
+
+1. **Build and register the SDK locally.** From the repo root, on the
+   version branch:
+
+   ```bash
+   git checkout latest
+   sdkcraft try        # packs amd64+arm64 and registers it as `try-hermes-agent`
+   ```
+
+   `sdkcraft try` re-packs whenever a part changed; otherwise it reuses the
+   cached build.
+
+2. **Launch the example workshop.** First launch takes ~5–10 minutes
+   (Hermes clone, Python 3.11 venv, Node 22, Playwright Chromium); later
+   refreshes are fast because state persists under the SDK's mount plugs.
+
+   ```bash
+   cd examples
+   workshop launch --verbose
+   ```
+
+3. **Connect the LLM tunnel.** Tunnels do **not** auto-connect, even though
+   the connection is declared in `workshop.yaml` (mounts do auto-connect).
+   Run this once after launch:
+
+   ```bash
+   workshop connect hermes-example/hermes-agent:llm-backend \
+                    hermes-example/system:llm-backend
+   ```
+
+   > Note: in `connections:` the plug is referenced by the SDK's real name
+   > `hermes-agent`, **not** `try-hermes-agent` — the `try-` prefix is
+   > reserved in plug/slot references.
+
+4. **Verify.**
+
+   ```bash
+   workshop info                                    # status: ready
+   workshop run hermes-example status               # hermes version + gateway unit
+   workshop connections | grep tunnel               # llm-backend shows a slot, "manual"
+   workshop exec -- curl -s http://localhost:11434/v1/models   # HTTP 200 from host Ollama
+   ```
+
+5. **Use it.**
+
+   ```bash
+   workshop run hermes-example chat     # interactive chat (Ollama-backed)
+   workshop run hermes-example logs     # follow gateway logs
+   workshop shell hermes-example        # interactive session; project is at /project
+   ```
+
+To iterate on the SDK, edit `sdkcraft.yaml`/`hooks/`, re-run `sdkcraft try`,
+then `workshop refresh` (not remove+launch).
+
+---
+
 ## Using the SDK
 
 ### Prerequisites, project layout

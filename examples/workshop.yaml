@@ -18,6 +18,13 @@
 # First launch takes ~5–10 minutes — Hermes clones, the Python 3.11 venv
 # builds, Node 22 + Playwright Chromium download. Refreshes after that
 # are fast because everything persists under the SDK's mount plugs.
+#
+# After launch, connect the LLM tunnel once (tunnels do not auto-connect
+# even though the connection is declared below):
+#       workshop connect hermes-example/hermes-agent:llm-backend \
+#                        hermes-example/system:llm-backend
+# Verify it reaches the host's Ollama:
+#       workshop exec -- curl -s http://localhost:11434/v1/models
 
 name: hermes-example
 base: ubuntu@24.04
@@ -39,12 +46,14 @@ sdks:
         interface: tunnel
         endpoint: localhost:11434
 
-# Wire Hermes' outbound LLM plug to the system tunnel slot above. Inside
-# the workshop, `http://localhost:11434/v1` (the default `base_url` in
-# the SDK-provisioned config.yaml) now reaches the host's Ollama through
-# the tunnel — no config edit needed.
+# Wire Hermes' outbound LLM plug to the system tunnel slot above. Once the
+# tunnel is connected (see the `workshop connect` step in the header),
+# `http://localhost:11434/v1` inside the workshop — the default `base_url`
+# in the SDK-provisioned config.yaml — reaches the host's Ollama. No
+# config.yaml edit needed. Note the plug is referenced by the SDK's real
+# name `hermes-agent`, not `try-hermes-agent` (`try-` is reserved in refs).
 connections:
-  - plug: try-hermes-agent:llm-backend
+  - plug: hermes-agent:llm-backend
     slot: system:llm-backend
 
 actions:

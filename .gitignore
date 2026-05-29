@@ -6,6 +6,9 @@ stage/
 .snapcraft/
 .sdkcraft/
 
+# workshop per-project lock (machine-local; never commit)
+.workshop.lock
+
 # editor / OS
 .vscode/
 .idea/
