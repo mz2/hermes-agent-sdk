@@ -177,35 +177,56 @@ systemctl --user status hermes-gateway
 
 - Interface: `tunnel`
 - Endpoint: `11434`
-- Purpose: Outbound connection to an Ollama-compatible OpenAI endpoint
-  running in **another workshop on the same host** (e.g. an `ollama`
-  workshop's `ollama-server` slot). When connected, the default
-  `config.yaml` URL `http://localhost:11434/v1` resolves correctly
-  through the tunnel.
+- Purpose: Outbound connection to an Ollama-compatible OpenAI endpoint.
+  Two patterns work — wire to a sibling SDK's slot, or to a
+  `system:` tunnel slot pointing at a host address. When connected,
+  `http://localhost:11434/v1` (the default in the SDK-provisioned
+  `config.yaml`) tunnels to whatever the slot points at.
 
-#### Using Ollama on a different machine on your LAN
+#### Sibling workshop SDK (Ollama in another workshop on the same host)
 
-The tunnel plug only bridges to *other workshops on the same host* — it
-does not reach out to arbitrary network endpoints. If your Ollama (or
-vLLM, LiteLLM, …) runs on a different machine (e.g.
-`http://ozymandias:11434/v1`), leave the plug **unconnected** and edit
-the URL directly:
+```yaml
+sdks:
+  - name: hermes
+    channel: latest/stable
+  - name: ollama
+    channel: latest/stable
 
-```bash
-workshop shell
-sed -i 's|http://localhost:11434/v1|http://ozymandias:11434/v1|' \
-    ~/.hermes/config.yaml
-systemctl --user restart hermes-gateway
+connections:
+  - plug: hermes:llm-backend
+    slot: ollama:ollama-server
 ```
 
-The workshop's outbound network reaches the LAN normally, so no plug is
-needed for this case.
+#### Host-reachable Ollama (same machine, or LAN)
 
-#### Using a remote provider (OpenAI / Anthropic / OpenRouter)
+The `system` SDK exposes a tunnel slot pointing at any host-reachable
+endpoint. No config rewrite or post-launch step needed:
 
-Same pattern: leave the plug unconnected, edit `~/.hermes/config.yaml`
-to set `model.provider`, `model.base_url`, and add the matching
-`API_KEY` to `~/.hermes/.env`.
+```yaml
+sdks:
+  - name: hermes
+    channel: latest/stable
+  - name: system
+    slots:
+      llm-backend:
+        interface: tunnel
+        endpoint: ozymandias:11434   # or localhost:11434 for same-host
+
+connections:
+  - plug: hermes:llm-backend
+    slot: system:llm-backend
+```
+
+See `examples/workshop.yaml` in this repo for a complete runnable
+variant.
+
+#### Remote provider (OpenAI / Anthropic / OpenRouter)
+
+For HTTPS providers reached over the public internet, skip the tunnel
+wiring entirely — the workshop's outbound network reaches them
+directly. Edit `~/.hermes/config.yaml` to set `model.provider` and
+`model.base_url`, and add the matching API key to
+`~/.hermes/secrets/.env`.
 
 ## Slots (resources this SDK provides)
 
