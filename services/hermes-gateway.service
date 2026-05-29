@@ -1,0 +1,25 @@
+[Unit]
+Description=Hermes Agent Gateway (messaging bridges)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Load .env (.env file managed at ~/.hermes/.env). EnvironmentFile is optional
+# at unit start — if the user hasn't provisioned credentials yet, the gateway
+# will fail and check-health reports "waiting" with a remediation message.
+EnvironmentFile=-%h/.hermes/.env
+
+# Use a login shell so PATH picks up ~/.local/bin (hermes wrapper) and
+# ~/.hermes/node/bin (bundled Node 22 from upstream installer).
+ExecStart=/bin/bash -lc "hermes gateway"
+
+Restart=on-failure
+RestartSec=5
+
+# Reasonable defaults — gateway is mostly idle, occasional bursts when
+# messages arrive.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target

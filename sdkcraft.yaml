@@ -1,0 +1,89 @@
+name: hermes
+adopt-info: hermes
+summary: Hermes Agent — self-improving AI agent from Nous Research
+description: |
+  This SDK provides the Hermes Agent (https://github.com/NousResearch/hermes-agent),
+  a self-improving AI agent that creates skills from experience, maintains
+  persistent memory, and bridges to messaging platforms (Telegram, Discord,
+  WhatsApp, Slack, Signal, Email) via its gateway daemon.
+
+  The agent's home directory (`~/.hermes/`), its uv-managed virtualenv, uv
+  cache, npm cache, and the Playwright Chromium download are persisted on the
+  host so workshop updates do not redo the multi-minute install. The gateway
+  runs as a systemd user unit and is exposed via the `gateway` tunnel slot
+  for host-side health probes. The LLM backend (Ollama-compatible by
+  default) is consumed through the `llm-backend` tunnel plug.
+
+  Configure messaging credentials in `~/.hermes/.env` after launch — the
+  health check reports `waiting` until the gateway successfully connects.
+
+license: GPL-3.0-only
+
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+
+plugs:
+  # The whole Hermes home tree — config.yaml, .env, SOUL.md, persistent memory,
+  # skills, sessions, the editable hermes-agent clone, the venv, and the bundled
+  # Node 22. Keeping it under one mount means `workshop refresh` doesn't redo
+  # the multi-minute install; `setup-project` short-circuits when VERSION matches.
+  hermes-home:
+    interface: mount
+    workshop-target: /home/workshop/.hermes
+    mode: 0o700
+
+  # uv resolver cache. Speeds up `uv pip install` across refreshes and is
+  # safe to share across hermes upgrades.
+  uv-cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/uv
+
+  # npm cache for the WhatsApp bridge (Baileys + dependencies).
+  npm-cache:
+    interface: mount
+    workshop-target: /home/workshop/.npm
+
+  # Playwright Chromium download (~300MB). Persisted so reinstalls don't
+  # re-pull the browser bundle.
+  playwright-cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/ms-playwright
+
+  # LLM backend tunnel — wire to an Ollama workshop or host port. Default
+  # config.yaml points at http://localhost:11434/v1, so connecting this plug
+  # to an Ollama-compatible OpenAI endpoint on port 11434 makes the agent
+  # work out of the box.
+  llm-backend:
+    interface: tunnel
+    endpoint: 11434
+
+slots:
+  # Gateway tunnel slot. Hermes' gateway is primarily an outbound consumer
+  # of messaging APIs, but exposing its loopback presence at port 8765 lets
+  # the host probe `hermes gateway status`-style endpoints if/when upstream
+  # exposes one. Keep the slot even if unused today — it's the only way to
+  # let host tooling reach into the workshop.
+  gateway:
+    interface: tunnel
+    endpoint: 8765
+
+parts:
+  # Version-only part. The real install (clone + uv pip install + node + playwright
+  # + npm) happens in hooks/setup-project because (a) the upstream installer needs
+  # internet at runtime, (b) state lives under the persisted `hermes-home` mount,
+  # and (c) the install pattern matches JupyterLab (Python source, dynamic install).
+  hermes:
+    plugin: nil
+    override-pull: |
+      VERSION=$(cat "$CRAFT_PROJECT_DIR/VERSION")
+      craftctl set version="$VERSION"
+
+  # Bundled systemd unit file. Dumped into the SDK so setup-project can install
+  # it under ~/.config/systemd/user/.
+  services:
+    plugin: dump
+    source: services
+    source-type: local

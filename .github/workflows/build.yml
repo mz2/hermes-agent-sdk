@@ -1,0 +1,14 @@
+name: Build SDK
+
+on:
+  pull_request:
+    branches:
+      - latest
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: canonical/sdkcraft-actions/.github/workflows/build.yml@main

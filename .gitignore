@@ -1,0 +1,13 @@
+# sdkcraft build artifacts
+*.sdk
+parts/
+prime/
+stage/
+.snapcraft/
+.sdkcraft/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

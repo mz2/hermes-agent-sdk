@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+# setup-base: system-wide setup. Runs as root on launch and on every refresh.
+#
+# Installs the system packages the upstream Hermes installer would `apt-get`
+# itself: build-essential and python3-dev/libffi-dev for native extensions
+# during `uv pip install`, ripgrep and ffmpeg for the agent's grep/audio
+# tools, plus curl/git for the in-workshop install steps in setup-project.
+#
+# Node.js is intentionally NOT installed via apt: Ubuntu 24.04 ships Node 18,
+# but the WhatsApp bridge (Baileys) requires Node 22's Web Crypto. We let the
+# upstream installer's script fetch Node 22 to ~/.hermes/node/ from nodejs.org.
+set -euo pipefail
+
+apt-get update
+eatmydata apt-get install \
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    ripgrep \
+    ffmpeg \
+    curl \
+    git \
+    ca-certificates

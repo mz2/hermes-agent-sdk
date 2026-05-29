@@ -1,0 +1,25 @@
+name: Build and Upload SDK
+
+on:
+  push:
+    branches:
+      - latest
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch name (e.g., latest)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-upload:
+    uses: canonical/sdkcraft-actions/.github/workflows/upload.yml@main
+    with:
+      platforms: '["amd64"]'
+      risk: "stable"
+    secrets:
+      SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
