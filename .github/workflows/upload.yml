@@ -19,13 +19,13 @@ jobs:
   build-and-upload:
     uses: canonical/sdkcraft-actions/.github/workflows/upload.yml@main
     with:
-      # Both arches publish to the store. Since the SDK's parts are
-      # plugin: nil, packing is arch-agnostic — sdkcraft pack just bundles
-      # metadata + hooks + services. An amd64 runner can cross-pack the
-      # arm64 .sdk just as well as a native arm64 runner. If you set up an
-      # arm64-capable runner, override `runs-on` (single JSON array used
-      # for every matrix entry) — for separate runners per arch, split
-      # this into two jobs.
+      # Both arches publish to the store from the self-hosted arm64 runner.
+      # SDK parts are plugin: nil, so sdkcraft pack just bundles metadata
+      # + hooks + services — the runner cross-packs amd64 from arm64
+      # without trouble. `runs-on` is a single JSON array used for every
+      # matrix entry; to route arches to different runners, split this
+      # into two jobs with separate `runs-on`.
+      runs-on: '["self-hosted","arm64"]'
       platforms: '["amd64","arm64"]'
       risk: "stable"
     secrets:
