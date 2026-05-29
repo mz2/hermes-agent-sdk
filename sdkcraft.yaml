@@ -20,15 +20,14 @@ description: |
 license: GPL-3.0-only
 
 build-base: ubuntu@24.04
+# Both platforms list both arches under build-on. Parts are plugin: nil so
+# sdkcraft pack just bundles metadata + hooks + services with no arch-specific
+# build work — any runner can cross-pack any platform. setup-project picks the
+# right Node 22 tarball at runtime via dpkg --print-architecture.
 platforms:
   amd64:
-    build-on: [amd64]
+    build-on: [amd64, arm64]
     build-for: [amd64]
-  # arm64 builds on either arch because the parts are plugin: nil — sdkcraft
-  # pack just bundles metadata + hooks + services, with no arch-specific build
-  # work. CI runners (typically amd64) can cross-pack arm64 artifacts, and
-  # arm64 hosts can pack arm64 natively. setup-project picks the right Node 22
-  # tarball at runtime via dpkg --print-architecture.
   arm64:
     build-on: [amd64, arm64]
     build-for: [arm64]

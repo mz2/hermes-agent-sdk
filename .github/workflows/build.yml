@@ -12,3 +12,7 @@ concurrency:
 jobs:
   build:
     uses: canonical/sdkcraft-actions/.github/workflows/build.yml@main
+    with:
+      # Self-hosted arm64 runner. Cross-packs both platforms via plugin: nil
+      # parts. Override these labels if/when more runners are wired in.
+      runs-on: '["self-hosted","arm64"]'
