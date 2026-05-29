@@ -93,7 +93,7 @@ mkdir -p ~/secrets/hermes
 $EDITOR ~/secrets/hermes/.env
 
 # Then from the workshop project:
-workshop remount <workshop>/hermes:hermes-secrets ~/secrets/hermes
+workshop remount <workshop>/hermes-agent:hermes-secrets ~/secrets/hermes
 workshop shell -c "systemctl --user restart hermes-gateway"
 ```
 

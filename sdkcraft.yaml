@@ -63,7 +63,7 @@ plugs:
   # just the .env file (agenix/sops/plain-file) without owning the whole
   # ~/.hermes tree. Default behaviour: Workshop auto-allocates host storage;
   # the user enters credentials with `workshop shell`. Override:
-  # `workshop remount <ws>/hermes:hermes-secrets <host-path>` to point at a
+  # `workshop remount <ws>/hermes-agent:hermes-secrets <host-path>` to point at a
   # host-managed directory containing `.env`. The setup-project hook
   # symlinks ~/.hermes/.env -> ~/.hermes/secrets/.env so both the gateway
   # systemd unit and the hermes CLI find credentials in the same place.
