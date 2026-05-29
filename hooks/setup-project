@@ -20,6 +20,18 @@ HERMES_SRC="$HERMES_HOME/hermes-agent"
 NODE_DIR="$HERMES_HOME/node"
 NODE_VERSION="22.11.0"  # matches upstream installer's "Node 22 LTS"
 
+# Map dpkg arch -> Node release tarball arch. Ubuntu amd64 -> Node "x64";
+# Ubuntu arm64 -> Node "arm64". Fail loudly on anything else so a future
+# (e.g. ppc64el, riscv64) workshop can't silently pull the wrong binary.
+case "$(dpkg --print-architecture)" in
+    amd64) NODE_TARBALL_ARCH="linux-x64" ;;
+    arm64) NODE_TARBALL_ARCH="linux-arm64" ;;
+    *)
+        echo "hermes-sdk: unsupported architecture $(dpkg --print-architecture)" >&2
+        exit 1
+        ;;
+esac
+
 mkdir -p "$HERMES_HOME"
 
 # 1. uv -------------------------------------------------------------------
@@ -53,7 +65,7 @@ if [ ! -x "$NODE_DIR/bin/node" ]; then
     mkdir -p "$NODE_DIR"
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/node.tar.xz" \
-        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_TARBALL_ARCH}.tar.xz"
     tar -xJf "$tmp/node.tar.xz" -C "$NODE_DIR" --strip-components=1
     rm -rf "$tmp"
 fi

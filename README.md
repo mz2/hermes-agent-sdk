@@ -63,6 +63,9 @@ and add the API key to `~/.hermes/.env`.
    Node 22 (required by the WhatsApp bridge — Ubuntu 24.04's apt Node is
    too old), installs Playwright Chromium, writes a default `config.yaml`
    if absent, and starts the gateway as a systemd user unit.
+4. Supported on `amd64` and `arm64`. The setup hook auto-selects the
+   right Node 22 tarball via `dpkg --print-architecture`; Playwright
+   Chromium and Python wheels are also available for both arches.
 
 ### Configure messaging credentials
 
