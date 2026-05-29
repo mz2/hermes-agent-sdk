@@ -104,7 +104,7 @@ memory:
   memory_enabled: true
   user_profile_enabled: true
 
-# Set HERMES_TAVILY_API_KEY in ~/.hermes/.env to use Tavily web search.
+# Set HERMES_TAVILY_API_KEY in ~/.hermes/secrets/.env to use Tavily web search.
 web:
   backend: tavily
 
@@ -120,14 +120,29 @@ display:
 
 # Messaging platforms are disabled by default. Enable per platform after
 # adding the relevant credentials (TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN,
-# etc.) to ~/.hermes/.env.
+# etc.) to ~/.hermes/secrets/.env.
 platforms: {}
 CONFIG
 fi
 
-# Ensure .env exists so the gateway's EnvironmentFile= directive succeeds.
-touch "$HERMES_HOME/.env"
-chmod 600 "$HERMES_HOME/.env"
+# Ensure the secrets directory and .env file exist. The directory is itself a
+# mount plug (hermes-secrets) — it may be auto-allocated by Workshop or
+# remounted by the user to a host-managed path. Either way: mkdir is a no-op
+# when already mounted, and touching .env makes the gateway's EnvironmentFile=
+# directive succeed even before credentials are populated.
+mkdir -p "$HERMES_HOME/secrets"
+touch "$HERMES_HOME/secrets/.env"
+chmod 700 "$HERMES_HOME/secrets"
+chmod 600 "$HERMES_HOME/secrets/.env"
+
+# Symlink ~/.hermes/.env -> secrets/.env so the hermes CLI (which loads
+# ~/.hermes/.env directly) sees the same credentials as the gateway service.
+# Migrate any pre-existing real .env file from older SDK versions.
+if [ -e "$HERMES_HOME/.env" ] && [ ! -L "$HERMES_HOME/.env" ]; then
+    cat "$HERMES_HOME/.env" >> "$HERMES_HOME/secrets/.env"
+    rm "$HERMES_HOME/.env"
+fi
+ln -sfn secrets/.env "$HERMES_HOME/.env"
 
 # 8. Install + enable gateway systemd user unit ---------------------------
 install -D --mode=644 --target-directory "$HOME/.config/systemd/user" \

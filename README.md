@@ -67,14 +67,36 @@ and add the API key to `~/.hermes/.env`.
 ### Configure messaging credentials
 
 The gateway will sit in `activating`/`failed` until credentials are in
-place. After launch:
+place. Credentials live in a dedicated `hermes-secrets` mount plug at
+`~/.hermes/secrets/.env`; `setup-project` also creates a symlink
+`~/.hermes/.env -> secrets/.env` so the hermes CLI sees the same file.
+
+**Edit from inside the workshop** (simplest):
 
 ```bash
 workshop shell
-$EDITOR ~/.hermes/.env
+$EDITOR ~/.hermes/secrets/.env
 # Add e.g. TELEGRAM_BOT_TOKEN=..., DISCORD_BOT_TOKEN=..., etc.
 systemctl --user restart hermes-gateway
 ```
+
+**Manage from a host directory** (agenix, sops, plain host file). The
+`hermes-secrets` plug is separate from `hermes-home` precisely so you can
+remount only the secrets without taking over the whole ~/.hermes tree:
+
+```bash
+# On the host:
+mkdir -p ~/secrets/hermes
+$EDITOR ~/secrets/hermes/.env
+
+# Then from the workshop project:
+workshop remount <workshop>/hermes:hermes-secrets ~/secrets/hermes
+workshop shell -c "systemctl --user restart hermes-gateway"
+```
+
+Or declare the connection in `workshop.yaml` via `system:mount` with
+`host-source: ~/secrets/hermes` so it survives `workshop remove` /
+`workshop launch` cycles.
 
 The `check-health` hook reports `waiting` with a remediation hint while
 the gateway is not active, so `workshop status` surfaces guidance.
@@ -135,6 +157,18 @@ systemctl --user status hermes-gateway
 - Workshop target: `/home/workshop/.cache/ms-playwright`
 - Purpose: Playwright's browser bundle (~300MB). Avoids re-downloading
   Chromium on every refresh.
+
+### `hermes-secrets`
+
+- Interface: `mount`
+- Workshop target: `/home/workshop/.hermes/secrets`
+- Mode: `0o700`
+- Purpose: Dedicated mount for credentials (`.env`). Narrower than
+  `hermes-home` so the host can manage just the secrets directory with
+  a host-side secret manager (agenix, sops, plain file) without taking
+  over `~/.hermes`'s caches and state. `setup-project` symlinks
+  `~/.hermes/.env -> secrets/.env` so the hermes CLI and the gateway
+  systemd unit see the same file.
 
 ### `llm-backend`
 

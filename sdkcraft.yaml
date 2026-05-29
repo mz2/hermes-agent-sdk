@@ -52,6 +52,19 @@ plugs:
     interface: mount
     workshop-target: /home/workshop/.cache/ms-playwright
 
+  # Secrets directory — narrower than `hermes-home` so the host can manage
+  # just the .env file (agenix/sops/plain-file) without owning the whole
+  # ~/.hermes tree. Default behaviour: Workshop auto-allocates host storage;
+  # the user enters credentials with `workshop shell`. Override:
+  # `workshop remount <ws>/hermes:hermes-secrets <host-path>` to point at a
+  # host-managed directory containing `.env`. The setup-project hook
+  # symlinks ~/.hermes/.env -> ~/.hermes/secrets/.env so both the gateway
+  # systemd unit and the hermes CLI find credentials in the same place.
+  hermes-secrets:
+    interface: mount
+    workshop-target: /home/workshop/.hermes/secrets
+    mode: 0o700
+
   # LLM backend tunnel — wire to an Ollama workshop or host port. Default
   # config.yaml points at http://localhost:11434/v1, so connecting this plug
   # to an Ollama-compatible OpenAI endpoint on port 11434 makes the agent
