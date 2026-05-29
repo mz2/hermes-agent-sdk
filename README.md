@@ -19,7 +19,7 @@ A minimal workshop:
 name: hermes-dev
 base: ubuntu@24.04
 sdks:
-  - name: hermes
+  - name: hermes-agent
     channel: latest/stable
   - name: ollama
     channel: latest/stable
@@ -28,7 +28,7 @@ connections:
   # Wire the Ollama workshop's HTTP server into the Hermes workshop's
   # llm-backend plug. The default config.yaml shipped with hermes-sdk
   # points at http://localhost:11434/v1, so this Just Works.
-  - plug: hermes:llm-backend
+  - plug: hermes-agent:llm-backend
     slot: ollama:ollama-server
 
 actions:
@@ -187,13 +187,13 @@ systemctl --user status hermes-gateway
 
 ```yaml
 sdks:
-  - name: hermes
+  - name: hermes-agent
     channel: latest/stable
   - name: ollama
     channel: latest/stable
 
 connections:
-  - plug: hermes:llm-backend
+  - plug: hermes-agent:llm-backend
     slot: ollama:ollama-server
 ```
 
@@ -204,7 +204,7 @@ endpoint. No config rewrite or post-launch step needed:
 
 ```yaml
 sdks:
-  - name: hermes
+  - name: hermes-agent
     channel: latest/stable
   - name: system
     slots:
@@ -213,7 +213,7 @@ sdks:
         endpoint: ozymandias:11434   # or localhost:11434 for same-host
 
 connections:
-  - plug: hermes:llm-backend
+  - plug: hermes-agent:llm-backend
     slot: system:llm-backend
 ```
 
