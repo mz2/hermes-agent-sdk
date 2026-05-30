@@ -21,12 +21,12 @@
 #
 # After launch, connect the LLM tunnel once (tunnels do not auto-connect
 # even though the connection is declared below):
-#       workshop connect hermes-example/hermes-agent:llm-backend \
-#                        hermes-example/system:llm-backend
+#       workshop connect hermes/hermes-agent:llm-backend \
+#                        hermes/system:llm-backend
 # Verify it reaches the host's Ollama:
 #       workshop exec -- curl -s http://localhost:11434/v1/models
 
-name: hermes-example
+name: hermes
 base: ubuntu@24.04
 
 sdks:
@@ -63,7 +63,7 @@ actions:
     systemctl --user restart hermes-gateway
 
   # Interactive chat. Trailing args forward through, so:
-  #   workshop run hermes-example chat -- --model openrouter/anthropic/claude-3.5-sonnet
+  #   workshop run hermes chat -- --model openrouter/anthropic/claude-3.5-sonnet
   chat: |
     hermes chat "$@"
 

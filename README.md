@@ -19,7 +19,7 @@ A minimal workshop:
 
 ```yaml
 # workshop.yaml
-name: hermes-dev
+name: hermes
 base: ubuntu@24.04
 sdks:
   - name: hermes-agent
@@ -92,8 +92,8 @@ with a `system` tunnel slot pointing at an Ollama on the host.
    Run this once after launch:
 
    ```bash
-   workshop connect hermes-example/hermes-agent:llm-backend \
-                    hermes-example/system:llm-backend
+   workshop connect hermes/hermes-agent:llm-backend \
+                    hermes/system:llm-backend
    ```
 
    > Note: in `connections:` the plug is referenced by the SDK's real name
@@ -104,7 +104,7 @@ with a `system` tunnel slot pointing at an Ollama on the host.
 
    ```bash
    workshop info                                    # status: ready
-   workshop run hermes-example status               # hermes version + gateway unit
+   workshop run hermes status               # hermes version + gateway unit
    workshop connections | grep tunnel               # llm-backend shows a slot, "manual"
    workshop exec -- curl -s http://localhost:11434/v1/models   # HTTP 200 from host Ollama
    ```
@@ -112,9 +112,9 @@ with a `system` tunnel slot pointing at an Ollama on the host.
 5. **Use it.**
 
    ```bash
-   workshop run hermes-example chat     # interactive chat (Ollama-backed)
-   workshop run hermes-example logs     # follow gateway logs
-   workshop shell hermes-example        # interactive session; project is at /project
+   workshop run hermes chat     # interactive chat (Ollama-backed)
+   workshop run hermes logs     # follow gateway logs
+   workshop shell hermes        # interactive session; project is at /project
    ```
 
 To iterate on the SDK, edit `sdkcraft.yaml`/`hooks/`, re-run `sdkcraft try`,
@@ -184,21 +184,21 @@ the gateway is not active, so `workshop status` surfaces guidance.
 The `hermes` CLI runs **inside the workshop** — the SDK installs a wrapper at
 `~/.local/bin/hermes` that puts the bundled Node 22 on `PATH` and execs the
 venv entrypoint. It is not installed on the host, so you invoke it through
-`workshop`. Three equivalent ways (workshop name `hermes-example` here; omit
+`workshop`. Three equivalent ways (workshop name `hermes` here; omit
 it if the project has only one workshop):
 
 ```bash
 # 1. One-off command in the workshop:
-workshop exec hermes-example -- hermes --version
+workshop exec hermes -- hermes --version
 
 # 2. Interactive login shell, then use hermes directly:
-workshop shell hermes-example
+workshop shell hermes
 #   then inside the shell:
 hermes chat
 hermes --version
 
 # 3. Via a named action defined in workshop.yaml (forwards trailing args):
-workshop run hermes-example chat -- --model openrouter/anthropic/claude-3.5-sonnet
+workshop run hermes chat -- --model openrouter/anthropic/claude-3.5-sonnet
 ```
 
 The `chat` action above is just `hermes chat "$@"` from the workshop's
@@ -320,7 +320,7 @@ steps:
 1. **Use a plain workshop.yaml** — no `system` slot, no `connections:`:
 
    ```yaml
-   name: hermes-dev
+   name: hermes
    base: ubuntu@24.04
    sdks:
      - name: hermes-agent

@@ -23,7 +23,7 @@ description: |
   Example workshop.yaml — wire the agent to an Ollama-compatible endpoint
   on the host (the `system` SDK exposes the host port as a tunnel slot):
 
-    name: hermes-dev
+    name: hermes
     base: ubuntu@24.04
 
     sdks:
@@ -45,9 +45,9 @@ description: |
   Launch, then connect the LLM tunnel once (tunnels do not auto-connect):
 
     workshop launch
-    workshop connect hermes-dev/hermes-agent:llm-backend \
-                     hermes-dev/system:llm-backend
-    workshop run hermes-dev chat
+    workshop connect hermes/hermes-agent:llm-backend \
+                     hermes/system:llm-backend
+    workshop run hermes chat
 
   To use a remote provider (OpenAI / Anthropic / OpenRouter) instead of a
   host-local Ollama, there is no tunnel to wire — the workshop reaches HTTPS
@@ -130,8 +130,9 @@ slots:
 parts:
   # Version-only part. The real install (clone + uv pip install + node + playwright
   # + npm) happens in hooks/setup-project because (a) the upstream installer needs
-  # internet at runtime, (b) state lives under the persisted `hermes-home` mount,
-  # and (c) the install pattern matches JupyterLab (Python source, dynamic install).
+  # internet at runtime, (b) the runtime is built into the workshop sandbox at
+  # launch (not shippable in the package), and (c) the install pattern matches
+  # JupyterLab (Python source, dynamic install).
   hermes-agent:
     plugin: nil
     override-pull: |

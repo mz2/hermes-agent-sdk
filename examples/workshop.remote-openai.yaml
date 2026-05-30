@@ -12,14 +12,14 @@
 # This is a reference file; it is NOT auto-loaded (its name isn't
 # `workshop.yaml`). To use it, copy it into a project as `workshop.yaml`.
 #
-# Quickstart once launched (workshop name is `hermes-remote`):
+# Quickstart once launched (workshop name is `hermes`):
 #   workshop launch
-#   workshop run hermes-remote set-token -- sk-or-your-key-here
-#   workshop run hermes-remote set-endpoint -- \
+#   workshop run hermes set-token -- sk-or-your-key-here
+#   workshop run hermes set-endpoint -- \
 #       https://openrouter.ai/api/v1 anthropic/claude-3.5-sonnet OPENROUTER_API_KEY
-#   workshop run hermes-remote chat
+#   workshop run hermes chat
 
-name: hermes-remote
+name: hermes
 base: ubuntu@24.04
 
 sdks:
@@ -35,8 +35,8 @@ actions:
   # Store the auth token in the secrets mount (kept out of this committed
   # file). The token name (e.g. OPENROUTER_API_KEY) must match the `api_key`
   # reference you set with `set-endpoint` below.
-  #   workshop run hermes-remote set-token -- sk-or-your-key-here
-  #   workshop run hermes-remote set-token -- sk-or-... OPENROUTER_API_KEY
+  #   workshop run hermes set-token -- sk-or-your-key-here
+  #   workshop run hermes set-token -- sk-or-... OPENROUTER_API_KEY
   set-token: |
     token="$1"; var="${2:-OPENROUTER_API_KEY}"
     if [ -z "$token" ]; then echo "usage: set-token <token> [ENV_VAR_NAME]" >&2; exit 1; fi
@@ -49,8 +49,8 @@ actions:
   # Point the agent at the remote endpoint + model. Rewrites the `model:`
   # block of ~/.hermes/config.yaml in place using the venv's Python (which has
   # PyYAML), leaving every other section untouched.
-  #   workshop run hermes-remote set-endpoint -- <base_url> <model> [ENV_VAR_NAME]
-  #   workshop run hermes-remote set-endpoint -- \
+  #   workshop run hermes set-endpoint -- <base_url> <model> [ENV_VAR_NAME]
+  #   workshop run hermes set-endpoint -- \
   #       https://openrouter.ai/api/v1 anthropic/claude-3.5-sonnet OPENROUTER_API_KEY
   set-endpoint: |
     base_url="$1"; model="$2"; var="${3:-OPENROUTER_API_KEY}"
