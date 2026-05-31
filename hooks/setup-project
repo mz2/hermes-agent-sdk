@@ -118,7 +118,11 @@ if [ ! -f "$HERMES_HOME/config.yaml" ]; then
 # Edit freely; subsequent refreshes won't overwrite this file.
 model:
   provider: custom
-  default: qwen3.6:35b
+  # REQUIRED: set to a model available on your llm-backend endpoint (e.g.
+  # qwen3.6:35b), then `workshop refresh`. Left empty on purpose — no model is
+  # defaulted, so check-health fails explicitly rather than silently running
+  # on a model that may not exist on your endpoint.
+  default: ""
   # Wired through the SDK's `llm-backend` tunnel plug. Connect that plug to
   # an Ollama-compatible OpenAI endpoint (Ollama itself, vLLM, LiteLLM, etc.)
   # and this endpoint will resolve correctly.

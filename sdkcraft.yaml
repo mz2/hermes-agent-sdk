@@ -117,6 +117,16 @@ plugs:
     interface: tunnel
     endpoint: 11434
 
+  # Memory backend tunnel — wire to an external memory service (e.g. a mem0
+  # or hindsight SDK in a sibling workshop, or a host endpoint) instead of
+  # the built-in markdown memory. Connect this plug to that SDK's tunnel
+  # slot; inside the workshop the service is then reachable at
+  # http://localhost:8000, which is what the agent's memory backend config
+  # should point at. Adjust `endpoint` to match the memory service's port.
+  memory-backend:
+    interface: tunnel
+    endpoint: 8000
+
 slots:
   # Gateway tunnel slot. Hermes' gateway is primarily an outbound consumer
   # of messaging APIs, but exposing its loopback presence at port 8765 lets

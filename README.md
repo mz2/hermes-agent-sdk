@@ -176,6 +176,28 @@ Or declare the connection in `workshop.yaml` via `system:mount` with
 `host-source: ~/secrets/hermes` so it survives `workshop remove` /
 `workshop launch` cycles.
 
+**Encrypted at rest (age).** The SDK has no dependency on any secret
+manager — `hermes-secrets` is just a mount, so *what backs it* is your
+choice. To keep credentials encrypted at rest, store an age-encrypted
+`hermes-env.age` (committed to your config repo), decrypt it at login into
+a tmpfs, and remount `hermes-secrets` there. Plaintext then lives only in
+RAM and the age key never enters the workshop:
+
+```bash
+# decrypt the committed ciphertext into the per-user tmpfs ($XDG_RUNTIME_DIR):
+install -d -m 700 "$XDG_RUNTIME_DIR/hermes-secrets"
+age -d -i ~/.ssh/id_ed25519 -o "$XDG_RUNTIME_DIR/hermes-secrets/.env" hermes-env.age
+
+# point the secrets mount at it (re-applied on future `workshop refresh`):
+workshop remount <workshop>/hermes-agent:hermes-secrets "$XDG_RUNTIME_DIR/hermes-secrets"
+workshop exec <workshop> -- systemctl --user restart hermes-gateway
+```
+
+Wrap the decrypt step in a `systemd --user` oneshot unit (with
+`loginctl enable-linger`) to repopulate the tmpfs at every boot. `age`
+supports SSH ed25519 keys directly as the identity/recipient, so an
+existing key works — no separate keypair needed.
+
 The `check-health` hook reports `waiting` with a remediation hint while
 the gateway is not active, so `workshop status` surfaces guidance.
 
