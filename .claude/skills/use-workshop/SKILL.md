@@ -21,12 +21,14 @@ Five rules that always apply to operating Workshop. These come first; every work
 </essential_principles>
 
 <docs>
-Authoritative readable docs:
-- Base URL: `https://ubuntu.com/workshop/docs/`
-  Per-file `<source_docs>` blocks list paths RELATIVE to this base, with `.md` suffixes (e.g. `reference/cli/workshop-launch.md`). Fetch by concatenating `<base>` + relative path → `https://ubuntu.com/workshop/docs/reference/cli/workshop-launch.md`.
-- Whole-tree fallback: `<base>/llms.txt` — `https://ubuntu.com/workshop/docs/llms.txt`. Load this when a specific relative page isn't enough (e.g., the user asks something the skill doesn't directly cover and you want to scan the full docs tree).
+Authoritative docs source: the `docs/` tree of the `canonical/workshop` GitHub repo (reStructuredText). The rendered, human-readable site is `https://documentation.ubuntu.com/canonical-workshop/latest/` (the old `ubuntu.com/workshop/docs/` path is stale and 404s for `llms.txt`).
 
-The base URL may change. It is recorded HERE only — every other file lists relative paths so a single edit re-points the whole skill. Do not embed local `docs/` paths in any file under this skill; the docs site is the source of truth.
+- Base URL (for fetching): `https://raw.githubusercontent.com/canonical/workshop/main/docs/`
+  Per-file `<source_docs>` blocks list paths RELATIVE to this base with `.md` suffixes (e.g. `reference/cli/workshop-launch.md`). The GitHub source is reStructuredText, so **swap the `.md` suffix for `.rst`** when fetching: concatenate `<base>` + relative-path-with-`.rst` → `https://raw.githubusercontent.com/canonical/workshop/main/docs/reference/cli/workshop-launch.rst`.
+- Whole-tree fallback: list every page with `gh api repos/canonical/workshop/git/trees/main?recursive=1 --jq '.tree[].path | select(startswith("docs/"))'`, then fetch the relevant `.rst` via the base URL above (or `gh api repos/canonical/workshop/contents/<path> --jq .content | base64 -d`). Use this when a specific page isn't enough and you want to scan the full docs tree. (There is no working `llms.txt`.)
+- Note: some answers live only in the source, not the docs (e.g. boot-at-startup is handled by setting LXD `boot.autostart` in `internal/workshop/lxd/lxd_backend.go` — true while a workshop is started/`Ready`, false once stopped). `gh search code "<term>" --repo canonical/workshop` is a fast way to confirm behavior the docs omit.
+
+The base URL may change. It is recorded HERE only — every other file lists relative paths so a single edit re-points the whole skill. Do not embed local `docs/` paths in any file under this skill; the GitHub repo is the source of truth.
 </docs>
 
 <intake>

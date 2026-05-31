@@ -1,15 +1,22 @@
 #!/usr/bin/bash
 # check-health: report SDK status to Workshop.
 #
-# Two checks: (1) hermes CLI is callable, (2) gateway is active. The gateway
-# will commonly be in `activating`/`failed` until the user populates
-# ~/.hermes/secrets/.env with messaging credentials — we report "waiting"
-# with a remediation hint rather than "error" so the workshop surfaces
-# guidance.
+# Three checks: (1) hermes CLI is callable, (2) a model is configured, (3) the
+# gateway is active. A missing model is an explicit error (no model is
+# defaulted); a not-yet-active gateway is "waiting" (commonly just missing
+# messaging credentials), so the workshop surfaces the right guidance.
 set -euo pipefail
 
 if ! sudo -u workshop --login hermes --version >/dev/null 2>&1; then
     workshopctl set-health error "hermes CLI not available on PATH (setup-project did not complete)"
+    exit 0
+fi
+
+# Require an explicit model.default — none is defaulted. Fail loudly so the
+# missing config is obvious rather than silently running on a wrong model.
+MODEL="$(awk '/^model:/{m=1;next} /^[^[:space:]]/{m=0} m && /^[[:space:]]*default:[[:space:]]*/{sub(/^[[:space:]]*default:[[:space:]]*/,"");gsub(/["'"'"']/,"");print;exit}' /home/workshop/.hermes/config.yaml 2>/dev/null)"
+if [ -z "$MODEL" ]; then
+    workshopctl set-health error "model.default is not set in ~/.hermes/config.yaml — set it to a model available on your llm-backend endpoint (e.g. qwen3.6:35b), then run: workshop refresh"
     exit 0
 fi
 

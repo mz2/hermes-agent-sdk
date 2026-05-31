@@ -4,9 +4,12 @@ This SDK provides the [Hermes Agent](https://github.com/NousResearch/hermes-agen
 a self-improving AI agent from Nous Research that creates skills from
 experience, maintains persistent memory, and bridges to messaging platforms
 (Telegram, Discord, WhatsApp, Slack, Signal, Email) via its gateway daemon.
-The agent's home directory, virtualenv, uv/npm caches, and Playwright
-Chromium download are persisted on the host so workshop updates do not redo
-the multi-minute install.
+The rebuildable runtime — the `hermes-agent` clone, the Python virtualenv,
+bundled Node 22, and the uv/npm/Playwright caches — lives inside the workshop
+sandbox, so nothing of it is written to host storage. It persists across
+`workshop refresh` and is rebuilt only on a full recreate. Only the agent's
+config and state (`~/.hermes`) and its secrets (`.env`) are persisted via
+mount plugs.
 
 ---
 
@@ -16,7 +19,7 @@ A minimal workshop:
 
 ```yaml
 # workshop.yaml
-name: hermes-dev
+name: hermes
 base: ubuntu@24.04
 sdks:
   - name: hermes-agent
@@ -76,7 +79,8 @@ with a `system` tunnel slot pointing at an Ollama on the host.
 
 2. **Launch the example workshop.** First launch takes ~5–10 minutes
    (Hermes clone, Python 3.11 venv, Node 22, Playwright Chromium); later
-   refreshes are fast because state persists under the SDK's mount plugs.
+   refreshes are fast because the runtime persists in the workshop's own
+   filesystem (a full `remove`/recreate redoes the install).
 
    ```bash
    cd examples
@@ -88,8 +92,8 @@ with a `system` tunnel slot pointing at an Ollama on the host.
    Run this once after launch:
 
    ```bash
-   workshop connect hermes-example/hermes-agent:llm-backend \
-                    hermes-example/system:llm-backend
+   workshop connect hermes/hermes-agent:llm-backend \
+                    hermes/system:llm-backend
    ```
 
    > Note: in `connections:` the plug is referenced by the SDK's real name
@@ -100,7 +104,7 @@ with a `system` tunnel slot pointing at an Ollama on the host.
 
    ```bash
    workshop info                                    # status: ready
-   workshop run hermes-example status               # hermes version + gateway unit
+   workshop run hermes status               # hermes version + gateway unit
    workshop connections | grep tunnel               # llm-backend shows a slot, "manual"
    workshop exec -- curl -s http://localhost:11434/v1/models   # HTTP 200 from host Ollama
    ```
@@ -108,9 +112,9 @@ with a `system` tunnel slot pointing at an Ollama on the host.
 5. **Use it.**
 
    ```bash
-   workshop run hermes-example chat     # interactive chat (Ollama-backed)
-   workshop run hermes-example logs     # follow gateway logs
-   workshop shell hermes-example        # interactive session; project is at /project
+   workshop run hermes chat     # interactive chat (Ollama-backed)
+   workshop run hermes logs     # follow gateway logs
+   workshop shell hermes        # interactive session; project is at /project
    ```
 
 To iterate on the SDK, edit `sdkcraft.yaml`/`hooks/`, re-run `sdkcraft try`,
@@ -172,8 +176,55 @@ Or declare the connection in `workshop.yaml` via `system:mount` with
 `host-source: ~/secrets/hermes` so it survives `workshop remove` /
 `workshop launch` cycles.
 
+**Encrypted at rest (age).** The SDK has no dependency on any secret
+manager — `hermes-secrets` is just a mount, so *what backs it* is your
+choice. To keep credentials encrypted at rest, store an age-encrypted
+`hermes-env.age` (committed to your config repo), decrypt it at login into
+a tmpfs, and remount `hermes-secrets` there. Plaintext then lives only in
+RAM and the age key never enters the workshop:
+
+```bash
+# decrypt the committed ciphertext into the per-user tmpfs ($XDG_RUNTIME_DIR):
+install -d -m 700 "$XDG_RUNTIME_DIR/hermes-secrets"
+age -d -i ~/.ssh/id_ed25519 -o "$XDG_RUNTIME_DIR/hermes-secrets/.env" hermes-env.age
+
+# point the secrets mount at it (re-applied on future `workshop refresh`):
+workshop remount <workshop>/hermes-agent:hermes-secrets "$XDG_RUNTIME_DIR/hermes-secrets"
+workshop exec <workshop> -- systemctl --user restart hermes-gateway
+```
+
+Wrap the decrypt step in a `systemd --user` oneshot unit (with
+`loginctl enable-linger`) to repopulate the tmpfs at every boot. `age`
+supports SSH ed25519 keys directly as the identity/recipient, so an
+existing key works — no separate keypair needed.
+
 The `check-health` hook reports `waiting` with a remediation hint while
 the gateway is not active, so `workshop status` surfaces guidance.
+
+### Running the hermes CLI
+
+The `hermes` CLI runs **inside the workshop** — the SDK installs a wrapper at
+`~/.local/bin/hermes` that puts the bundled Node 22 on `PATH` and execs the
+venv entrypoint. It is not installed on the host, so you invoke it through
+`workshop`. Three equivalent ways (workshop name `hermes` here; omit
+it if the project has only one workshop):
+
+```bash
+# 1. One-off command in the workshop:
+workshop exec hermes -- hermes --version
+
+# 2. Interactive login shell, then use hermes directly:
+workshop shell hermes
+#   then inside the shell:
+hermes chat
+hermes --version
+
+# 3. Via a named action defined in workshop.yaml (forwards trailing args):
+workshop run hermes chat -- --model openrouter/anthropic/claude-3.5-sonnet
+```
+
+The `chat` action above is just `hermes chat "$@"` from the workshop's
+`actions:` block — see `examples/workshop.yaml`.
 
 ### Interactive chat
 
@@ -200,37 +251,27 @@ systemctl --user status hermes-gateway
 
 ## Plugs (resources this SDK consumes)
 
+> **Persistence model.** Only the agent's config/state and its secrets are
+> mounted. The rebuildable runtime — the `hermes-agent` clone and Python
+> venv (`~/hermes-agent`), bundled Node 22 (`~/.local/lib/hermes/node`), and
+> the uv/npm/Playwright caches (`~/.cache/uv`, `~/.npm`,
+> `~/.cache/ms-playwright`) — lives in the workshop sandbox, not on the host.
+> It persists across `workshop refresh` (same container) and is rebuilt only
+> on a full recreate.
+
 ### `hermes-home`
 
 - Interface: `mount`
 - Workshop target: `/home/workshop/.hermes`
 - Mode: `0o700`
-- Purpose: The agent's home tree — `config.yaml`, `.env`, `SOUL.md`,
-  persistent memory, skills, sessions, the editable `hermes-agent/` git
-  clone, the Python venv, and the bundled Node 22. Persisting the whole
-  tree means `workshop refresh` skips the multi-minute reinstall when
-  the SDK's VERSION is unchanged.
-
-### `uv-cache`
-
-- Interface: `mount`
-- Workshop target: `/home/workshop/.cache/uv`
-- Purpose: uv resolver/install cache. Reused across version bumps to
-  speed up dependency updates.
-
-### `npm-cache`
-
-- Interface: `mount`
-- Workshop target: `/home/workshop/.npm`
-- Purpose: npm download cache for the WhatsApp bridge (Baileys and
-  transitive deps).
-
-### `playwright-cache`
-
-- Interface: `mount`
-- Workshop target: `/home/workshop/.cache/ms-playwright`
-- Purpose: Playwright's browser bundle (~300MB). Avoids re-downloading
-  Chromium on every refresh.
+- Purpose: The agent's config and state — `config.yaml`, `.env` (symlink),
+  `SOUL.md`, persistent memory, skills, and sessions. **Not** the runtime
+  (clone/venv/Node/caches all live in the sandbox). Like claude-code's
+  `claude-config`, this mount auto-connects to Workshop-allocated storage
+  and survives `workshop refresh`. To manage it on a host path instead:
+  `workshop stop <ws>` →
+  `workshop remount <ws>/hermes-agent:hermes-home <host-path>` →
+  `workshop start <ws>`.
 
 ### `hermes-secrets`
 
@@ -240,7 +281,7 @@ systemctl --user status hermes-gateway
 - Purpose: Dedicated mount for credentials (`.env`). Narrower than
   `hermes-home` so the host can manage just the secrets directory with
   a host-side secret manager (agenix, sops, plain file) without taking
-  over `~/.hermes`'s caches and state. `setup-project` symlinks
+  over the rest of `~/.hermes`. `setup-project` symlinks
   `~/.hermes/.env -> secrets/.env` so the hermes CLI and the gateway
   systemd unit see the same file.
 
@@ -293,11 +334,47 @@ variant.
 
 #### Remote provider (OpenAI / Anthropic / OpenRouter)
 
-For HTTPS providers reached over the public internet, skip the tunnel
-wiring entirely — the workshop's outbound network reaches them
-directly. Edit `~/.hermes/config.yaml` to set `model.provider` and
-`model.base_url`, and add the matching API key to
-`~/.hermes/secrets/.env`.
+A remote HTTPS provider is reached over the workshop's normal outbound
+internet connection, so there is **no tunnel to wire** — the `llm-backend`
+plug and the `system:` slot are only needed for a host-local Ollama. Three
+steps:
+
+1. **Use a plain workshop.yaml** — no `system` slot, no `connections:`:
+
+   ```yaml
+   name: hermes
+   base: ubuntu@24.04
+   sdks:
+     - name: hermes-agent
+       channel: latest/stable
+   ```
+
+2. **Point the model config at the provider.** Edit `~/.hermes/config.yaml`
+   (inside the workshop: `workshop shell` then your editor) so the `model:`
+   block names the provider's OpenAI-compatible endpoint and model. For
+   OpenRouter:
+
+   ```yaml
+   model:
+     provider: custom
+     default: anthropic/claude-3.5-sonnet     # a model the provider offers
+     base_url: https://openrouter.ai/api/v1   # the provider's /v1 endpoint
+     api_key: ${OPENROUTER_API_KEY}           # read from the .env below
+   ```
+
+   (For OpenAI use `https://api.openai.com/v1`; for Anthropic's
+   OpenAI-compatible endpoint use `https://api.anthropic.com/v1`.)
+
+3. **Put the API key in secrets.** Add it to `~/.hermes/secrets/.env`, then
+   restart the gateway:
+
+   ```bash
+   echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.hermes/secrets/.env
+   systemctl --user restart hermes-gateway
+   ```
+
+See `examples/workshop.remote-openai.yaml` for a complete runnable variant
+with `set-token` / `set-endpoint` actions that do steps 2–3 for you.
 
 ## Slots (resources this SDK provides)
 
