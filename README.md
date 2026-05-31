@@ -11,6 +11,9 @@ sandbox, so nothing of it is written to host storage. It persists across
 config and state (`~/.hermes`) and its secrets (`.env`) are persisted via
 mount plugs.
 
+It is packaged for [Workshop](https://ubuntu.com/workshop), Canonical's tool
+for reproducible, sandboxed development environments.
+
 ---
 
 ## Reference workshop
@@ -124,23 +127,19 @@ then `workshop refresh` (not remove+launch).
 
 ## Using the SDK
 
-### Prerequisites, project layout
+### Prerequisites and project layout
 
-1. No prerequisite SDKs are required, but the SDK is most useful paired
-   with an LLM provider — either an `ollama` workshop wired via the
-   `llm-backend` plug, or a remote endpoint (OpenAI / Anthropic /
-   OpenRouter / NovitaAI) configured in `~/.hermes/config.yaml`.
-2. No specific project layout is needed. The project directory at
-   `/project` is available to the agent for file tools, code execution,
-   and `hermes skill` development.
-3. On launch the SDK installs uv, clones `NousResearch/hermes-agent` at
-   the SDK's pinned VERSION, builds a Python 3.11 virtualenv, fetches
-   Node 22 (required by the WhatsApp bridge — Ubuntu 24.04's apt Node is
-   too old), installs Playwright Chromium, writes a default `config.yaml`
-   if absent, and starts the gateway as a systemd user unit.
-4. Supported on `amd64` and `arm64`. The setup hook auto-selects the
-   right Node 22 tarball via `dpkg --print-architecture`; Playwright
-   Chromium and Python wheels are also available for both arches.
+No prerequisite SDKs are required, but the agent needs an LLM provider to be
+useful — either an `ollama` workshop wired via the `llm-backend` plug, or a
+remote endpoint (OpenAI / Anthropic / OpenRouter / NovitaAI) set in
+`~/.hermes/config.yaml`. No particular project layout is needed; `/project` is
+available to the agent for file tools, code execution, and `hermes skill` work.
+
+On first launch (`amd64` or `arm64`) the SDK installs uv, clones
+`NousResearch/hermes-agent` at the pinned VERSION, builds a Python 3.11 venv,
+fetches Node 22 (for the WhatsApp bridge — Ubuntu 24.04's apt Node is too old),
+installs Playwright Chromium, writes a default `config.yaml` if absent, and
+starts the gateway as a systemd user unit.
 
 ### Configure messaging credentials
 
@@ -158,7 +157,8 @@ $EDITOR ~/.hermes/secrets/.env
 systemctl --user restart hermes-gateway
 ```
 
-**Manage from a host directory** (agenix, sops, plain host file). The
+**Manage from a host directory** ([agenix](https://github.com/ryantm/agenix),
+[sops](https://github.com/getsops/sops), plain host file). The
 `hermes-secrets` plug is separate from `hermes-home` precisely so you can
 remount only the secrets without taking over the whole ~/.hermes tree:
 
@@ -228,16 +228,15 @@ The `chat` action above is just `hermes chat "$@"` from the workshop's
 
 ### Interactive chat
 
-```bash
-workshop shell
-hermes chat
-```
-
-Pass model overrides on the command line:
+No need to open a shell first — `exec` forwards a TTY, so chat works as a
+one-liner. Pass model overrides after the command:
 
 ```bash
-hermes chat --model openrouter/anthropic/claude-3.5-sonnet
+workshop exec hermes -- hermes chat
+workshop exec hermes -- hermes chat --model openrouter/anthropic/claude-3.5-sonnet
 ```
+
+Or `workshop run hermes chat` if the workshop defines the `chat` action.
 
 ### Verify from the command line
 
@@ -382,7 +381,8 @@ prefer the HTTP transport above, or give the `command:` an absolute path.
 - Mode: `0o700`
 - Purpose: Dedicated mount for credentials (`.env`). Narrower than
   `hermes-home` so the host can manage just the secrets directory with
-  a host-side secret manager (agenix, sops, plain file) without taking
+  a host-side secret manager ([agenix](https://github.com/ryantm/agenix),
+  [sops](https://github.com/getsops/sops), plain file) without taking
   over the rest of `~/.hermes`. `setup-project` symlinks
   `~/.hermes/.env -> secrets/.env` so the hermes CLI and the gateway
   systemd unit see the same file.
@@ -411,7 +411,7 @@ connections:
     slot: ollama:ollama-server
 ```
 
-#### Host-reachable Ollama (same machine, or LAN)
+#### Host-reachable Ollama
 
 The `system` SDK exposes a tunnel slot pointing at any host-reachable
 endpoint. No config rewrite or post-launch step needed:
@@ -436,47 +436,30 @@ variant.
 
 #### Remote provider (OpenAI / Anthropic / OpenRouter)
 
-A remote HTTPS provider is reached over the workshop's normal outbound
-internet connection, so there is **no tunnel to wire** — the `llm-backend`
-plug and the `system:` slot are only needed for a host-local Ollama. Three
-steps:
+For HTTPS providers reached over the public internet, skip the tunnel wiring
+entirely — the workshop's outbound network reaches them directly, so the
+`llm-backend` plug and `system:` slot aren't needed. Use a plain
+`workshop.yaml` (just `- name: hermes-agent`), set the `model:` block in
+`~/.hermes/config.yaml`, and add the API key to `~/.hermes/secrets/.env`:
 
-1. **Use a plain workshop.yaml** — no `system` slot, no `connections:`:
+```yaml
+# ~/.hermes/config.yaml — OpenRouter example
+model:
+  provider: custom
+  default: anthropic/claude-3.5-sonnet     # a model the provider offers
+  base_url: https://openrouter.ai/api/v1   # the provider's /v1 endpoint
+  api_key: ${OPENROUTER_API_KEY}           # read from secrets/.env
+```
 
-   ```yaml
-   name: hermes
-   base: ubuntu@24.04
-   sdks:
-     - name: hermes-agent
-       channel: latest/stable
-   ```
+```bash
+echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.hermes/secrets/.env
+systemctl --user restart hermes-gateway
+```
 
-2. **Point the model config at the provider.** Edit `~/.hermes/config.yaml`
-   (inside the workshop: `workshop shell` then your editor) so the `model:`
-   block names the provider's OpenAI-compatible endpoint and model. For
-   OpenRouter:
-
-   ```yaml
-   model:
-     provider: custom
-     default: anthropic/claude-3.5-sonnet     # a model the provider offers
-     base_url: https://openrouter.ai/api/v1   # the provider's /v1 endpoint
-     api_key: ${OPENROUTER_API_KEY}           # read from the .env below
-   ```
-
-   (For OpenAI use `https://api.openai.com/v1`; for Anthropic's
-   OpenAI-compatible endpoint use `https://api.anthropic.com/v1`.)
-
-3. **Put the API key in secrets.** Add it to `~/.hermes/secrets/.env`, then
-   restart the gateway:
-
-   ```bash
-   echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.hermes/secrets/.env
-   systemctl --user restart hermes-gateway
-   ```
-
-See `examples/workshop.remote-openai.yaml` for a complete runnable variant
-with `set-token` / `set-endpoint` actions that do steps 2–3 for you.
+(For OpenAI use `https://api.openai.com/v1`; for Anthropic's OpenAI-compatible
+endpoint `https://api.anthropic.com/v1`.) See
+`examples/workshop.remote-openai.yaml` for a runnable variant with
+`set-token` / `set-endpoint` actions that do this for you.
 
 ### `mcp-server`
 
