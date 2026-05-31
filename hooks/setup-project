@@ -159,6 +159,39 @@ display:
 # adding the relevant credentials (TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN,
 # etc.) to ~/.hermes/secrets/.env.
 platforms: {}
+
+# MCP servers — external tool providers Hermes discovers at startup. Two
+# transports are supported; both are commented out below. Uncomment and edit
+# one, then `systemctl --user restart hermes-gateway` (or, inside `hermes
+# chat`, run `/reload-mcp`). See the SDK README "MCP servers" section.
+#
+# HTTP (a server in a SIBLING workshop, reached via the `mcp-server` tunnel
+# plug). Connect the plug to the server's HTTP slot, e.g. the affine-mcp-server
+# SDK's `affine-mcp-http`; it is then reachable at http://localhost:3000/mcp:
+#
+# mcp_servers:
+#   affine:
+#     url: http://localhost:3000/mcp
+#     # headers:
+#     #   Authorization: "Bearer ${AFFINE_MCP_HTTP_TOKEN}"   # from secrets/.env
+#     tools:
+#       resources: false
+#       prompts: false
+#
+# stdio (a server installed in the SAME workshop; Hermes spawns it as a
+# subprocess). Add the server's SDK to the same workshop.yaml so its CLI is on
+# PATH, then:
+#
+# mcp_servers:
+#   affine:
+#     command: affine-mcp
+#     # args: []
+#     env:
+#       AFFINE_TOOL_PROFILE: read_only
+#     tools:
+#       include: [list_docs, get_doc]   # whitelist; omit to expose all tools
+#       resources: false
+#       prompts: false
 CONFIG
 fi
 

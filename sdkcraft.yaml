@@ -65,6 +65,35 @@ description: |
   `OPENROUTER_API_KEY=sk-or-...`), then `systemctl --user restart
   hermes-gateway`.
 
+  MCP servers — Hermes discovers external tools from MCP servers listed under
+  `mcp_servers:` in ~/.hermes/config.yaml. The `mcp-server` tunnel plug wires
+  the agent to an MCP server running in a sibling workshop. Example: pair the
+  agent with the affine-mcp-server SDK (running its HTTP transport) so Hermes
+  can read and author AFFiNE docs:
+
+    sdks:
+      - name: hermes-agent
+        channel: latest/stable
+      - name: affine-mcp-server
+        channel: latest/stable
+
+    connections:
+      - plug: hermes-agent:mcp-server
+        slot: affine-mcp-server:affine-mcp-http
+
+  Then add to ~/.hermes/config.yaml (setup-project writes a commented
+  template):
+
+    mcp_servers:
+      affine:
+        url: http://localhost:3000/mcp
+        tools:
+          resources: false
+          prompts: false
+
+  See examples/workshop.with-mcp.yaml for a complete runnable variant and the
+  README "MCP servers" section for the stdio (same-workshop) alternative.
+
 license: GPL-3.0-only
 
 build-base: ubuntu@24.04
@@ -126,6 +155,21 @@ plugs:
   memory-backend:
     interface: tunnel
     endpoint: 8000
+
+  # MCP server tunnel — wire to an MCP server running in a sibling workshop
+  # (e.g. the affine-mcp-server SDK) so Hermes can discover and use its tools.
+  # The MCP server exposes its HTTP transport as a tunnel slot; connect this
+  # plug to that slot and the server becomes reachable inside the workshop at
+  # http://localhost:3000/mcp. Point an `mcp_servers:` entry in
+  # ~/.hermes/config.yaml at that URL (setup-project writes a commented
+  # template; see the README "MCP servers" section). The endpoint defaults to
+  # 3000 to match affine-mcp-server's `affine-mcp-http` slot; change it to
+  # match another server's port. For an MCP server that runs in the SAME
+  # workshop over stdio, no tunnel is needed — Hermes spawns it as a
+  # subprocess via a `command:` entry in config.yaml instead.
+  mcp-server:
+    interface: tunnel
+    endpoint: 3000
 
   # External memory-provider plugin, delivered by mount (e.g. cognee-local from
   # the cognee-hermes-memory SDK). Mounts a single provider package into the
