@@ -1,0 +1,31 @@
+name: Branch parity
+
+# Fails when `main` (template branch) and `latest` (version branch) diverge in
+# anything other than the two intended per-branch deltas: `VERSION` (latest-only)
+# and the Renovate workflow (main-only). Make this a required status check in
+# branch protection to block merges that would split the branches.
+on:
+  push:
+    branches: [main, latest]
+  pull_request:
+    branches: [main, latest]
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: main and latest must match (except VERSION + renovate.yml)
+        run: |
+          git fetch -q origin main latest
+          DIFF=$(git diff --name-only origin/main origin/latest -- . \
+                 ':(exclude)VERSION' \
+                 ':(exclude).github/workflows/renovate.yml')
+          if [ -n "$DIFF" ]; then
+            echo "::error::main and latest have diverged in content:"
+            echo "$DIFF"
+            exit 1
+          fi
+          echo "OK: main and latest are in content parity."
