@@ -1,0 +1,82 @@
+# Example workshop: Hermes against a REMOTE OpenAI-compatible endpoint that
+# requires an auth token — OpenAI, OpenRouter, Anthropic's OpenAI-compatible
+# API, Together, Fireworks, a hosted vLLM/LiteLLM with a key, etc.
+#
+# Key difference from examples/workshop.yaml (the host-Ollama variant):
+# a remote HTTPS endpoint is reached over the workshop's normal outbound
+# network, so there is NO tunnel — no `system` tunnel slot, no `llm-backend`
+# connection. You only provide two things after launch:
+#   1. the endpoint + model name, in ~/.hermes/config.yaml
+#   2. the auth token, in ~/.hermes/secrets/.env (never in this file)
+#
+# This is a reference file; it is NOT auto-loaded (its name isn't
+# `workshop.yaml`). To use it, copy it into a project as `workshop.yaml`.
+#
+# Quickstart once launched (workshop name is `hermes`):
+#   workshop launch
+#   workshop run hermes set-token -- sk-or-your-key-here
+#   workshop run hermes set-endpoint -- \
+#       https://openrouter.ai/api/v1 anthropic/claude-3.5-sonnet OPENROUTER_API_KEY
+#   workshop run hermes chat
+
+name: hermes
+base: ubuntu@24.04
+
+sdks:
+  - name: hermes-agent
+    channel: latest/stable
+    # For local SDK development, swap to the try build instead:
+    # name: try-hermes-agent  (no channel)
+
+# No `connections:` and no `system` SDK block — a remote provider needs no
+# tunnel wiring.
+
+actions:
+  # Store the auth token in the secrets mount (kept out of this committed
+  # file). The token name (e.g. OPENROUTER_API_KEY) must match the `api_key`
+  # reference you set with `set-endpoint` below.
+  #   workshop run hermes set-token -- sk-or-your-key-here
+  #   workshop run hermes set-token -- sk-or-... OPENROUTER_API_KEY
+  set-token: |
+    token="$1"; var="${2:-OPENROUTER_API_KEY}"
+    if [ -z "$token" ]; then echo "usage: set-token <token> [ENV_VAR_NAME]" >&2; exit 1; fi
+    # Replace any existing line for this var, then append the new value.
+    sed -i "/^${var}=/d" ~/.hermes/secrets/.env 2>/dev/null || true
+    printf '%s=%s\n' "$var" "$token" >> ~/.hermes/secrets/.env
+    systemctl --user restart hermes-gateway
+    echo "Stored $var in ~/.hermes/secrets/.env and restarted the gateway."
+
+  # Point the agent at the remote endpoint + model. Rewrites the `model:`
+  # block of ~/.hermes/config.yaml in place using the venv's Python (which has
+  # PyYAML), leaving every other section untouched.
+  #   workshop run hermes set-endpoint -- <base_url> <model> [ENV_VAR_NAME]
+  #   workshop run hermes set-endpoint -- \
+  #       https://openrouter.ai/api/v1 anthropic/claude-3.5-sonnet OPENROUTER_API_KEY
+  set-endpoint: |
+    base_url="$1"; model="$2"; var="${3:-OPENROUTER_API_KEY}"
+    if [ -z "$base_url" ] || [ -z "$model" ]; then
+      echo "usage: set-endpoint <base_url> <model> [ENV_VAR_NAME]" >&2; exit 1
+    fi
+    ~/hermes-agent/venv/bin/python - "$base_url" "$model" "$var" <<'PY'
+    import sys, yaml, pathlib
+    base_url, model, var = sys.argv[1:4]
+    cfg_path = pathlib.Path.home() / ".hermes" / "config.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    cfg["model"] = {
+        "provider": "custom",
+        "default": model,
+        "base_url": base_url,
+        "api_key": "${%s}" % var,   # expanded from ~/.hermes/secrets/.env
+    }
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    print(f"Set model.default={model}, base_url={base_url}, api_key=${{{var}}}")
+    PY
+    systemctl --user restart hermes-gateway
+
+  # Open config.yaml directly if you'd rather edit by hand.
+  edit-config: |
+    ${EDITOR:-vi} ~/.hermes/config.yaml
+    systemctl --user restart hermes-gateway
+
+  chat: |
+    hermes chat "$@"

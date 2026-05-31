@@ -1,5 +1,5 @@
-name: hermes
-adopt-info: hermes
+name: hermes-agent
+adopt-info: hermes-agent
 summary: Hermes Agent — self-improving AI agent from Nous Research
 description: |
   This SDK provides the Hermes Agent (https://github.com/NousResearch/hermes-agent),
@@ -7,50 +7,107 @@ description: |
   persistent memory, and bridges to messaging platforms (Telegram, Discord,
   WhatsApp, Slack, Signal, Email) via its gateway daemon.
 
-  The agent's home directory (`~/.hermes/`), its uv-managed virtualenv, uv
-  cache, npm cache, and the Playwright Chromium download are persisted on the
-  host so workshop updates do not redo the multi-minute install. The gateway
-  runs as a systemd user unit and is exposed via the `gateway` tunnel slot
-  for host-side health probes. The LLM backend (Ollama-compatible by
-  default) is consumed through the `llm-backend` tunnel plug.
+  The rebuildable runtime (the hermes-agent clone, the Python venv, bundled
+  Node 22, and the uv/npm/Playwright caches) lives inside the workshop
+  sandbox — it persists across `workshop refresh` and is rebuilt only on a
+  full recreate. Only the agent's config and state (`~/.hermes`: config.yaml,
+  memory, skills, sessions) and its secrets (`.env`) are persisted via mount
+  plugs, like claude-code's config mount. The gateway runs as a systemd user
+  unit and is exposed via the `gateway` tunnel slot for host-side health
+  probes. The LLM backend (Ollama-compatible by default) is consumed through
+  the `llm-backend` tunnel plug.
 
   Configure messaging credentials in `~/.hermes/.env` after launch — the
   health check reports `waiting` until the gateway successfully connects.
 
+  Example workshop.yaml — wire the agent to an Ollama-compatible endpoint
+  on the host (the `system` SDK exposes the host port as a tunnel slot):
+
+    name: hermes
+    base: ubuntu@24.04
+
+    sdks:
+      - name: hermes-agent
+        channel: latest/stable
+      - name: system
+        slots:
+          llm-backend:
+            interface: tunnel
+            endpoint: localhost:11434   # Ollama / vLLM / LiteLLM on the host
+
+    connections:
+      - plug: hermes-agent:llm-backend
+        slot: system:llm-backend
+
+    actions:
+      chat: hermes chat "$@"
+
+  Launch, then connect the LLM tunnel once (tunnels do not auto-connect):
+
+    workshop launch
+    workshop connect hermes/hermes-agent:llm-backend \
+                     hermes/system:llm-backend
+    workshop run hermes chat
+
+  To use a remote provider (OpenAI / Anthropic / OpenRouter) instead of a
+  host-local Ollama, there is no tunnel to wire — the workshop reaches HTTPS
+  providers over its normal outbound network. Use a plain workshop.yaml with
+  just `- name: hermes-agent` (no `system` slot, no `connections:`), then in
+  ~/.hermes/config.yaml set the model block to the provider's endpoint, e.g.:
+
+    model:
+      provider: custom
+      default: anthropic/claude-3.5-sonnet    # a model the provider offers
+      base_url: https://openrouter.ai/api/v1  # the provider's /v1 endpoint
+      api_key: ${OPENROUTER_API_KEY}
+
+  and add the key to ~/.hermes/secrets/.env (e.g.
+  `OPENROUTER_API_KEY=sk-or-...`), then `systemctl --user restart
+  hermes-gateway`.
+
 license: GPL-3.0-only
 
 build-base: ubuntu@24.04
+# Both platforms list both arches under build-on. Parts are plugin: nil so
+# sdkcraft pack just bundles metadata + hooks + services with no arch-specific
+# build work — any runner can cross-pack any platform. setup-project picks the
+# right Node 22 tarball at runtime via dpkg --print-architecture.
 platforms:
   amd64:
-    build-on: [amd64]
+    build-on: [amd64, arm64]
     build-for: [amd64]
+  arm64:
+    build-on: [amd64, arm64]
+    build-for: [arm64]
 
 plugs:
-  # The whole Hermes home tree — config.yaml, .env, SOUL.md, persistent memory,
-  # skills, sessions, the editable hermes-agent clone, the venv, and the bundled
-  # Node 22. Keeping it under one mount means `workshop refresh` doesn't redo
-  # the multi-minute install; `setup-project` short-circuits when VERSION matches.
+  # The Hermes agent home — config.yaml, .env (symlink), SOUL.md, persistent
+  # memory, skills, and sessions. ONLY the agent's config and state; the
+  # rebuildable runtime (the hermes-agent clone, the Python venv, bundled
+  # Node 22, and the uv/npm/Playwright caches) deliberately lives inside the
+  # workshop sandbox, NOT here — see hooks/setup-project. Like claude-code's
+  # `claude-config`, this mount auto-connects to Workshop-allocated storage
+  # and survives `workshop refresh`. To manage the directory on the host
+  # instead: `workshop stop <ws>` then
+  # `workshop remount <ws>/hermes-agent:hermes-home <host-path>` then
+  # `workshop start <ws>`.
   hermes-home:
     interface: mount
     workshop-target: /home/workshop/.hermes
     mode: 0o700
 
-  # uv resolver cache. Speeds up `uv pip install` across refreshes and is
-  # safe to share across hermes upgrades.
-  uv-cache:
+  # Secrets directory — a separate, narrower mount so the host can manage just
+  # the `.env` file (agenix/sops/plain-file) without owning the rest of the
+  # ~/.hermes state tree. Default: Workshop auto-allocates storage and the user
+  # enters credentials with `workshop shell`. Override:
+  # `workshop remount <ws>/hermes-agent:hermes-secrets <host-path>` to point at a
+  # host-managed directory containing `.env`. setup-project symlinks
+  # ~/.hermes/.env -> secrets/.env so the gateway unit and the hermes CLI find
+  # the same file.
+  hermes-secrets:
     interface: mount
-    workshop-target: /home/workshop/.cache/uv
-
-  # npm cache for the WhatsApp bridge (Baileys + dependencies).
-  npm-cache:
-    interface: mount
-    workshop-target: /home/workshop/.npm
-
-  # Playwright Chromium download (~300MB). Persisted so reinstalls don't
-  # re-pull the browser bundle.
-  playwright-cache:
-    interface: mount
-    workshop-target: /home/workshop/.cache/ms-playwright
+    workshop-target: /home/workshop/.hermes/secrets
+    mode: 0o700
 
   # LLM backend tunnel — wire to an Ollama workshop or host port. Default
   # config.yaml points at http://localhost:11434/v1, so connecting this plug
@@ -59,6 +116,27 @@ plugs:
   llm-backend:
     interface: tunnel
     endpoint: 11434
+
+  # Memory backend tunnel — wire to an external memory service (e.g. a mem0
+  # or hindsight SDK in a sibling workshop, or a host endpoint) instead of
+  # the built-in markdown memory. Connect this plug to that SDK's tunnel
+  # slot; inside the workshop the service is then reachable at
+  # http://localhost:8000, which is what the agent's memory backend config
+  # should point at. Adjust `endpoint` to match the memory service's port.
+  memory-backend:
+    interface: tunnel
+    endpoint: 8000
+
+  # External memory-provider plugin, delivered by mount (e.g. cognee-local from
+  # the cognee-hermes-memory SDK). Mounts a single provider package into the
+  # Hermes plugin path; the agent imports it from ~/.hermes/plugins/cognee_local.
+  # This is a submount inside the hermes-home mount, exactly like hermes-secrets
+  # above, so the provider code is delivered with no copy and updates in place.
+  # Connect it to cognee-hermes-memory:cognee-hermes-plugin.
+  cognee-plugin:
+    interface: mount
+    workshop-target: /home/workshop/.hermes/plugins/cognee_local
+    mode: 0o755
 
 slots:
   # Gateway tunnel slot. Hermes' gateway is primarily an outbound consumer
@@ -73,13 +151,20 @@ slots:
 parts:
   # Version-only part. The real install (clone + uv pip install + node + playwright
   # + npm) happens in hooks/setup-project because (a) the upstream installer needs
-  # internet at runtime, (b) state lives under the persisted `hermes-home` mount,
-  # and (c) the install pattern matches JupyterLab (Python source, dynamic install).
-  hermes:
+  # internet at runtime, (b) the runtime is built into the workshop sandbox at
+  # launch (not shippable in the package), and (c) the install pattern matches
+  # JupyterLab (Python source, dynamic install).
+  hermes-agent:
     plugin: nil
     override-pull: |
       VERSION=$(cat "$CRAFT_PROJECT_DIR/VERSION")
       craftctl set version="$VERSION"
+    # Ship the VERSION file into the SDK payload (lands at $SDK/VERSION,
+    # same root as the dumped hermes-gateway.service). setup-project reads
+    # it at runtime to pin the hermes-agent clone/checkout.
+    override-build: |
+      craftctl default
+      install -D -m 644 "$CRAFT_PROJECT_DIR/VERSION" "$CRAFT_PART_INSTALL/VERSION"
 
   # Bundled systemd unit file. Dumped into the SDK so setup-project can install
   # it under ~/.config/systemd/user/.

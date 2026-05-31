@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright 2026 Canonical Ltd.
+
+name: agentic-daily
+base: ubuntu@24.04
+actions:
+  hello: echo agentic-daily-hello-ok
+  echoargs: |
+    echo "received: $@"

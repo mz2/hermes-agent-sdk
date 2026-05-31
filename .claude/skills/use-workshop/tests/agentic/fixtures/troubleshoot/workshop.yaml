@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright 2026 Canonical Ltd.
+
+name: agentic-troubleshoot
+base: ubuntu@24.04
+sdks:
+  # Intentionally bogus SDK reference — the launch will fail at the SDK
+  # install step. The agentic task asks the agent to diagnose and recover.
+  - name: this-sdk-does-not-exist-anywhere-12345

@@ -1,0 +1,16 @@
+project: hermes-agent
+
+path: /home/ubuntu/project
+
+backends:
+  lxd:
+    systems:
+      - ubuntu-24.04:
+          username: ubuntu
+          vm: true
+
+suites:
+  main/:
+    summary: Test the hermes-agent SDK inside workshops
+    environment:
+      BASE/noble: ubuntu@24.04

@@ -5,13 +5,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Load .env (.env file managed at ~/.hermes/.env). EnvironmentFile is optional
-# at unit start — if the user hasn't provisioned credentials yet, the gateway
-# will fail and check-health reports "waiting" with a remediation message.
-EnvironmentFile=-%h/.hermes/.env
+# Load .env from the dedicated `hermes-secrets` mount plug. setup-project
+# also symlinks ~/.hermes/.env -> secrets/.env so the hermes CLI finds the
+# same file. EnvironmentFile is optional at unit start — if the user hasn't
+# provisioned credentials yet, the gateway will fail and check-health
+# reports "waiting" with a remediation message.
+EnvironmentFile=-%h/.hermes/secrets/.env
 
-# Use a login shell so PATH picks up ~/.local/bin (hermes wrapper) and
-# ~/.hermes/node/bin (bundled Node 22 from upstream installer).
+# Use a login shell so PATH picks up ~/.local/bin (the hermes wrapper). The
+# wrapper itself prepends the bundled Node 22 (~/.local/lib/hermes/node/bin)
+# and execs the venv entrypoint, so child node processes inherit it too.
 ExecStart=/bin/bash -lc "hermes gateway"
 
 Restart=on-failure

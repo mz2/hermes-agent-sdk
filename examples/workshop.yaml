@@ -1,0 +1,79 @@
+# Example workshop for the Hermes Agent SDK.
+#
+# Two ways to use this — pick one by editing the `sdks:` block below:
+#
+# (a) Test a locally-built SDK during development:
+#       cd ..                       # repo root
+#       git checkout latest
+#       sdkcraft try                # registers it locally as `try-hermes-agent`
+#       cd examples
+#       workshop launch --verbose
+#     and set:    `name: try-hermes-agent`
+#
+# (b) Use the published SDK (after `sdkcraft upload`):
+#       cd examples
+#       workshop launch --verbose
+#     and set:    `name: hermes-agent` + `channel: latest/stable`
+#
+# First launch takes ~5–10 minutes — Hermes clones, the Python 3.11 venv
+# builds, Node 22 + Playwright Chromium download. Refreshes after that
+# are fast because everything persists under the SDK's mount plugs.
+#
+# After launch, connect the LLM tunnel once (tunnels do not auto-connect
+# even though the connection is declared below):
+#       workshop connect hermes/hermes-agent:llm-backend \
+#                        hermes/system:llm-backend
+# Verify it reaches the host's Ollama:
+#       workshop exec -- curl -s http://localhost:11434/v1/models
+
+name: hermes
+base: ubuntu@24.04
+
+sdks:
+  - name: try-hermes-agent
+    # Swap to the published form when releasing:
+    # name: hermes-agent
+    # channel: latest/stable
+
+  # The system SDK exposes a tunnel slot pointing at the LLM backend on
+  # the host. The default `localhost:11434` assumes Ollama (or any
+  # OpenAI-compatible endpoint — vLLM, LiteLLM, …) is on the same host
+  # the workshop runs on. To reach an Ollama on a different LAN host,
+  # change the endpoint, e.g. `ozymandias:11434`.
+  - name: system
+    slots:
+      llm-backend:
+        interface: tunnel
+        endpoint: localhost:11434
+
+# Wire Hermes' outbound LLM plug to the system tunnel slot above. Once the
+# tunnel is connected (see the `workshop connect` step in the header),
+# `http://localhost:11434/v1` inside the workshop — the default `base_url`
+# in the SDK-provisioned config.yaml — reaches the host's Ollama. No
+# config.yaml edit needed. Note the plug is referenced by the SDK's real
+# name `hermes-agent`, not `try-hermes-agent` (`try-` is reserved in refs).
+connections:
+  - plug: hermes-agent:llm-backend
+    slot: system:llm-backend
+
+actions:
+  # Edit credentials, then restart the gateway so it picks them up.
+  edit-secrets: |
+    ${EDITOR:-vi} ~/.hermes/secrets/.env
+    systemctl --user restart hermes-gateway
+
+  # Interactive chat. Trailing args forward through, so:
+  #   workshop run hermes chat -- --model openrouter/anthropic/claude-3.5-sonnet
+  chat: |
+    hermes chat "$@"
+
+  # Follow gateway logs.
+  logs: |
+    journalctl --user -u hermes-gateway -f
+
+  # Quick health summary — useful when `workshop info` reports `waiting`
+  # and you want to see the underlying systemd reason.
+  status: |
+    hermes --version
+    echo
+    systemctl --user status hermes-gateway --no-pager --lines=20
