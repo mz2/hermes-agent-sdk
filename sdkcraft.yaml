@@ -127,6 +127,17 @@ plugs:
     interface: tunnel
     endpoint: 8000
 
+  # External memory-provider plugin, delivered by mount (e.g. cognee-local from
+  # the cognee-hermes-memory SDK). Mounts a single provider package into the
+  # Hermes plugin path; the agent imports it from ~/.hermes/plugins/cognee_local.
+  # This is a submount inside the hermes-home mount, exactly like hermes-secrets
+  # above, so the provider code is delivered with no copy and updates in place.
+  # Connect it to cognee-hermes-memory:cognee-hermes-plugin.
+  cognee-plugin:
+    interface: mount
+    workshop-target: /home/workshop/.hermes/plugins/cognee_local
+    mode: 0o755
+
 slots:
   # Gateway tunnel slot. Hermes' gateway is primarily an outbound consumer
   # of messaging APIs, but exposing its loopback presence at port 8765 lets
