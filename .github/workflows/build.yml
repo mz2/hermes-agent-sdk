@@ -9,29 +9,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
+# Build on GitHub-hosted runners via the shared sdkcraft-actions reusable
+# workflow. On amd64 it also runs `sdkcraft test` (the spread suite under
+# tests/) — the vm:true spread backend needs KVM, which the hosted amd64
+# runner provides. arm64 hosted runners are build-only for now (KVM there is
+# not guaranteed); flip run-tests: true once confirmed.
 jobs:
-  # amd64 — GitHub-hosted, fresh LXD + sdkcraft per run.
-  build-amd64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - name: Install LXD
-        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
-        with:
-          channel: 6/stable
-      - name: Install sdkcraft
-        run: sudo snap install sdkcraft --classic
-      - name: Pack SDK for amd64
-        run: sdkcraft --verbose pack --build-for amd64
-
-  # arm64 — self-hosted ozymandias. See upload.yml for one-time host setup.
-  build-arm64:
-    runs-on: [self-hosted, arm64]
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - name: Pack SDK for arm64
-        run: sdkcraft --verbose pack --build-for arm64
+  amd64:
+    uses: canonical/sdkcraft-actions/.github/workflows/build.yml@main
+    with:
+      runs-on: '["ubuntu-latest"]'
+      run-tests: true
+  arm64:
+    uses: canonical/sdkcraft-actions/.github/workflows/build.yml@main
+    with:
+      runs-on: '["ubuntu-24.04-arm"]'
+      run-tests: false
