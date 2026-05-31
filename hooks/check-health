@@ -16,7 +16,7 @@ fi
 # missing config is obvious rather than silently running on a wrong model.
 MODEL="$(awk '/^model:/{m=1;next} /^[^[:space:]]/{m=0} m && /^[[:space:]]*default:[[:space:]]*/{sub(/^[[:space:]]*default:[[:space:]]*/,"");gsub(/["'"'"']/,"");print;exit}' /home/workshop/.hermes/config.yaml 2>/dev/null)"
 if [ -z "$MODEL" ]; then
-    workshopctl set-health error "model.default is not set in ~/.hermes/config.yaml — set it to a model available on your llm-backend endpoint (e.g. qwen3.6:35b), then run: workshop refresh"
+    workshopctl set-health waiting "model.default is not set in ~/.hermes/config.yaml — set it to a model available on your llm-backend endpoint (e.g. qwen3.6:35b), then run: workshop refresh"
     exit 0
 fi
 
