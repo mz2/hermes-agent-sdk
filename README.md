@@ -249,6 +249,108 @@ systemctl --user status hermes-gateway
 
 ---
 
+## MCP servers
+
+Hermes can discover external tools from [MCP](https://modelcontextprotocol.io/)
+servers. List them under `mcp_servers:` in `~/.hermes/config.yaml`; Hermes
+loads them at startup, and `/reload-mcp` inside `hermes chat` re-reads the
+block without a restart. `setup-project` writes a commented `mcp_servers:`
+template into the default `config.yaml` to get you started.
+
+Each server uses one of two transports:
+
+- **HTTP** — `url:` (plus optional `headers:`). The server runs as its own
+  process, in a sibling workshop or remotely. This is the recommended way to
+  wire another Workshop SDK, and the only one that works cleanly for the
+  long-running gateway daemon. Use the `mcp-server` tunnel plug.
+- **stdio** — `command:` / `args:` / `env:`. Hermes spawns the server as a
+  subprocess. The server's binary must be on `PATH` in the **same** workshop,
+  so its SDK must be added to the same `workshop.yaml`. No tunnel needed.
+
+In both cases, scope what Hermes sees with a `tools:` block — `include:` /
+`exclude:` lists, and `resources: false` / `prompts: false` to drop the MCP
+utility wrappers. Prefer an `include:` allowlist for servers that can write or
+delete.
+
+### Example: AFFiNE docs via the `affine-mcp-server` SDK (HTTP)
+
+This is the fully wired example — see
+[`examples/workshop.with-mcp.yaml`](examples/workshop.with-mcp.yaml) for the
+complete runnable file with `affine-login` / `affine-serve` / `enable-affine`
+actions.
+
+1. **Put both SDKs in one `workshop.yaml` and wire the tunnel.** The AFFiNE
+   server's HTTP slot feeds Hermes' `mcp-server` plug:
+
+   ```yaml
+   sdks:
+     - name: hermes-agent
+       channel: latest/stable
+     - name: affine-mcp-server
+       channel: latest/stable
+
+   connections:
+     - plug: hermes-agent:mcp-server
+       slot: affine-mcp-server:affine-mcp-http
+   ```
+
+2. **Authenticate and start the AFFiNE server over HTTP** (port 3000). After
+   launch, inside the workshop:
+
+   ```bash
+   affine-mcp login                       # or set AFFINE_BASE_URL / AFFINE_API_TOKEN
+   systemd-run --user --unit=affine-mcp-http --collect \
+     --setenv=MCP_TRANSPORT=http \
+     --setenv=AFFINE_MCP_AUTH_MODE=bearer \
+     --setenv=AFFINE_MCP_HTTP_TOKEN=your-strong-secret \
+     affine-mcp
+   ```
+
+3. **Point Hermes at it.** In `~/.hermes/config.yaml`:
+
+   ```yaml
+   mcp_servers:
+     affine:
+       url: http://localhost:3000/mcp
+       headers:
+         Authorization: "Bearer your-strong-secret"
+       tools:
+         resources: false
+         prompts: false
+   ```
+
+   Then `systemctl --user restart hermes-gateway` (or `/reload-mcp` in chat).
+   Ask Hermes "Which MCP tools are available?" to confirm the AFFiNE tools
+   loaded.
+
+> **Cross-workshop variant.** The same wiring works with the AFFiNE server in
+> a *separate* workshop: launch it there, then
+> `workshop connect <hermes-ws>/hermes-agent:mcp-server
+> <affine-ws>/affine-mcp-server:affine-mcp-http`. The `mcp-server` plug exists
+> precisely so the HTTP transport can cross the sandbox boundary; tunnels do
+> not auto-connect, so run the `connect` once after launch.
+
+### Alternative: stdio (same workshop, no tunnel)
+
+If you keep both SDKs in one workshop, Hermes can spawn `affine-mcp` directly
+over stdio — no HTTP server, no tunnel:
+
+```yaml
+mcp_servers:
+  affine:
+    command: affine-mcp
+    env:
+      AFFINE_TOOL_PROFILE: read_only
+    tools:
+      resources: false
+      prompts: false
+```
+
+Caveat: the gateway runs as a systemd **user** unit, which does not source
+`/etc/profile.d`, so `affine-mcp` may not be on its `PATH`. stdio is most
+reliable for interactive `hermes chat` (a login shell); for the gateway daemon
+prefer the HTTP transport above, or give the `command:` an absolute path.
+
 ## Plugs (resources this SDK consumes)
 
 > **Persistence model.** Only the agent's config/state and its secrets are
@@ -375,6 +477,20 @@ steps:
 
 See `examples/workshop.remote-openai.yaml` for a complete runnable variant
 with `set-token` / `set-endpoint` actions that do steps 2–3 for you.
+
+### `mcp-server`
+
+- Interface: `tunnel`
+- Endpoint: `3000`
+- Purpose: Outbound connection to an MCP server's HTTP transport running in a
+  sibling workshop, so Hermes can discover and use its tools. Connect this
+  plug to the server's HTTP slot (e.g. the `affine-mcp-server` SDK's
+  `affine-mcp-http` slot); the server is then reachable inside the workshop at
+  `http://localhost:3000/mcp`, which is what an `mcp_servers:` entry in
+  `~/.hermes/config.yaml` points at. The endpoint defaults to `3000` to match
+  `affine-mcp-http`; change it to match another server's port. Not needed for
+  MCP servers that run in the **same** workshop over stdio — see the
+  [MCP servers](#mcp-servers) section.
 
 ## Slots (resources this SDK provides)
 
