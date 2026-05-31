@@ -273,10 +273,11 @@ delete.
 
 ### Example: AFFiNE docs via the `affine-mcp-server` SDK (HTTP)
 
-This is the fully wired example — see
+The `affine-mcp-server` SDK runs the HTTP server itself (a managed systemd
+service) and generates the bearer token on first launch — Hermes is a pure
+consumer. See
 [`examples/workshop.with-mcp.yaml`](examples/workshop.with-mcp.yaml) for the
-complete runnable file with `affine-login` / `affine-serve` / `enable-affine`
-actions.
+complete runnable file with `affine-login` / `enable-affine` actions.
 
 1. **Put both SDKs in one `workshop.yaml` and wire the tunnel.** The AFFiNE
    server's HTTP slot feeds Hermes' `mcp-server` plug:
@@ -293,26 +294,26 @@ actions.
        slot: affine-mcp-server:affine-mcp-http
    ```
 
-2. **Authenticate and start the AFFiNE server over HTTP** (port 3000). After
-   launch, inside the workshop:
+2. **Authenticate the AFFiNE server.** It already serves :3000; you only need to
+   give it AFFiNE credentials, then restart it to pick them up:
 
    ```bash
    affine-mcp login                       # or set AFFINE_BASE_URL / AFFINE_API_TOKEN
-   systemd-run --user --unit=affine-mcp-http --collect \
-     --setenv=MCP_TRANSPORT=http \
-     --setenv=AFFINE_MCP_AUTH_MODE=bearer \
-     --setenv=AFFINE_MCP_HTTP_TOKEN=your-strong-secret \
-     affine-mcp
+   systemctl --user restart affine-mcp-http
    ```
 
-3. **Point Hermes at it.** In `~/.hermes/config.yaml`:
+3. **Point Hermes at it.** Reference the server's bearer token (in
+   `~/.config/affine-mcp/.env`) rather than embedding it — copy it into
+   `~/.hermes/secrets/.env` and use `${AFFINE_MCP_HTTP_TOKEN}` in the header so
+   no secret is written into `config.yaml`:
 
    ```yaml
+   # ~/.hermes/config.yaml
    mcp_servers:
      affine:
        url: http://localhost:3000/mcp
        headers:
-         Authorization: "Bearer your-strong-secret"
+         Authorization: "Bearer ${AFFINE_MCP_HTTP_TOKEN}"
        tools:
          resources: false
          prompts: false
@@ -320,14 +321,18 @@ actions.
 
    Then `systemctl --user restart hermes-gateway` (or `/reload-mcp` in chat).
    Ask Hermes "Which MCP tools are available?" to confirm the AFFiNE tools
-   loaded.
+   loaded. The `enable-affine` action in the example file does the token copy
+   and config edit for you.
 
 > **Cross-workshop variant.** The same wiring works with the AFFiNE server in
 > a *separate* workshop: launch it there, then
 > `workshop connect <hermes-ws>/hermes-agent:mcp-server
 > <affine-ws>/affine-mcp-server:affine-mcp-http`. The `mcp-server` plug exists
 > precisely so the HTTP transport can cross the sandbox boundary; tunnels do
-> not auto-connect, so run the `connect` once after launch.
+> not auto-connect, so run the `connect` once after launch. The two sandboxes
+> no longer share a home, so the bearer token must be provisioned into both
+> secret stores — read it from the AFFiNE workshop's `~/.config/affine-mcp/.env`
+> and add it to Hermes' `~/.hermes/secrets/.env`.
 
 ### Alternative: stdio (same workshop, no tunnel)
 
