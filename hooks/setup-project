@@ -10,6 +10,7 @@
 #   4. Create venv, run `uv pip install -e '.[all]'`.
 #   5. Fetch Node 22 if missing (upstream installer pattern).
 #   6. npm install + playwright chromium download (cached under ~/.cache/ms-playwright).
+#   6b. Install CLI helpers (hermes-mcp-add) into ~/.local/bin.
 #   7. Write default config.yaml if absent.
 #   8. Install + enable hermes-gateway systemd user unit.
 set -euo pipefail
@@ -110,6 +111,11 @@ export PATH="$HOME/.local/lib/hermes/node/bin:$PATH"
 exec "$HERMES_SRC/venv/bin/hermes" "$@"
 WRAPPER
 chmod +x "$HOME/.local/bin/hermes"
+
+# 6b. CLI helpers shipped in the SDK payload ($SDK/bin dumped to $SDK root) -
+# hermes-mcp-add edits the mcp_servers: block of config.yaml. It execs the
+# hermes venv's python (which has PyYAML) by default.
+install -D -m 755 "$SDK/hermes-mcp-add" "$HOME/.local/bin/hermes-mcp-add"
 
 # 7. Default config.yaml (only if user hasn't supplied one) ---------------
 if [ ! -f "$HERMES_HOME/config.yaml" ]; then

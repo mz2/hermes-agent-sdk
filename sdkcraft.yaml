@@ -216,3 +216,11 @@ parts:
     plugin: dump
     source: services
     source-type: local
+
+  # CLI helpers dumped into the SDK ($SDK/hermes-mcp-add, ...). setup-project
+  # installs them into ~/.local/bin in the workshop. hermes-mcp-add edits the
+  # mcp_servers: block of config.yaml (see the README "MCP servers" section).
+  bin:
+    plugin: dump
+    source: bin
+    source-type: local
