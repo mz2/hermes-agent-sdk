@@ -1,345 +1,240 @@
 # Hermes Agent SDK for Workshop
 
-This SDK provides the [Hermes Agent](https://github.com/NousResearch/hermes-agent),
-a self-improving AI agent from Nous Research that creates skills from
-experience, maintains persistent memory, and bridges to messaging platforms
-(Telegram, Discord, WhatsApp, Slack, Signal, Email) via its gateway daemon.
-The rebuildable runtime — the `hermes-agent` clone, the Python virtualenv,
-bundled Node 22, and the uv/npm/Playwright caches — lives inside the workshop
-sandbox, so nothing of it is written to host storage. It persists across
-`workshop refresh` and is rebuilt only on a full recreate. Only the agent's
-config and state (`~/.hermes`) and its secrets (`.env`) are persisted via
-mount plugs.
+This SDK packages the [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+for [Workshop](https://ubuntu.com/workshop), Canonical's tool for reproducible,
+sandboxed development environments. Hermes is a self-improving AI agent from
+Nous Research that creates skills from experience, maintains persistent memory,
+and bridges to messaging platforms (Telegram, Discord, WhatsApp, Slack, Signal,
+Email) via its gateway daemon.
 
-It is packaged for [Workshop](https://ubuntu.com/workshop), Canonical's tool
-for reproducible, sandboxed development environments.
+The agent's rebuildable runtime (the clone, Python venv, bundled Node 22, and
+caches) lives inside the workshop sandbox; only its config/state (`~/.hermes`)
+and secrets (`.env`) persist via mount plugs. See
+[Persistence model](#persistence-model) for details.
 
 ---
 
-## Reference workshop
+## Quick start
 
-A minimal workshop:
+A minimal `workshop.yaml` pairing the agent with a host-local, Ollama-compatible
+LLM endpoint:
 
 ```yaml
-# workshop.yaml
 name: hermes
 base: ubuntu@24.04
+
 sdks:
   - name: hermes-agent
     channel: latest/stable
-  - name: ollama
-    channel: latest/stable
+
+  # The `system` SDK exposes a host endpoint as a tunnel slot.
+  - name: system
+    slots:
+      llm-backend:
+        interface: tunnel
+        endpoint: localhost:11434   # Ollama / vLLM / LiteLLM on the host
 
 connections:
-  # Wire the Ollama workshop's HTTP server into the Hermes workshop's
-  # llm-backend plug. The default config.yaml shipped with hermes-sdk
-  # points at http://localhost:11434/v1, so this Just Works.
   - plug: hermes-agent:llm-backend
-    slot: ollama:ollama-server
+    slot: system:llm-backend
 
 actions:
-  chat: |
-    hermes chat
-  configure-credentials: |
-    ${EDITOR:-vi} ~/.hermes/.env
-  gateway-restart: |
-    systemctl --user restart hermes-gateway
+  chat: hermes chat "$@"
 ```
 
-The reference pairs `hermes` with an `ollama` workshop so the agent has a
-local LLM backend out of the box. Remove the `connections:` block to point
-at OpenRouter / Anthropic / OpenAI instead — edit `~/.hermes/config.yaml`
-and add the API key to `~/.hermes/.env`.
+```bash
+workshop launch
+# Tunnels do not auto-connect; wire the LLM backend once after launch:
+workshop connect hermes/hermes-agent:llm-backend hermes/system:llm-backend
+workshop run hermes chat
+```
+
+For a hosted provider instead of a local Ollama, see
+[Choosing an LLM backend](#choosing-an-llm-backend). Runnable variants live in
+[`examples/`](examples/): `workshop.yaml` (host Ollama),
+`workshop.remote-openai.yaml` (hosted provider), and `workshop.with-mcp.yaml`
+(with an MCP server).
+
+On first launch the SDK installs uv, clones `NousResearch/hermes-agent` at the
+pinned `VERSION`, builds a Python 3.11 venv, fetches Node 22 (for the WhatsApp
+bridge), installs Playwright Chromium, writes a default `config.yaml` if absent,
+and starts the gateway as a systemd user unit. This takes roughly 5 to 10
+minutes; later `workshop refresh`es are fast.
 
 ---
 
-## Local development — run the example from a local build
+## Running the agent
 
-This is the verified end-to-end runbook for trying a locally-built SDK
-(no Store upload). It uses `examples/workshop.yaml`, which pairs the SDK
-with a `system` tunnel slot pointing at an Ollama on the host.
+The `hermes` CLI runs **inside the workshop** (a wrapper at `~/.local/bin/hermes`
+puts the bundled Node 22 on `PATH`); it is not installed on the host. Invoke it
+through `workshop`, three equivalent ways:
 
-### Prerequisites
+```bash
+# 1. One-off command (a TTY is forwarded, so interactive chat works):
+workshop exec hermes -- hermes chat
+workshop exec hermes -- hermes --version
 
-- The Workshop snap (provides `workshop`, `sdk`, and `sdkcraft`).
-- An OpenAI-compatible LLM endpoint reachable from the host — e.g. Ollama
-  listening on `localhost:11434`. The default `config.yaml` requests model
-  `qwen3.6:35b`; `ollama pull qwen3.6:35b` (or edit the model in
-  `~/.hermes/config.yaml`) so the agent has something to talk to.
+# 2. Interactive shell, then use hermes directly:
+workshop shell hermes
 
-### Steps
+# 3. A named action from workshop.yaml (forwards trailing args):
+workshop run hermes chat -- --model openrouter/anthropic/claude-3.5-sonnet
+```
 
-1. **Build and register the SDK locally.** From the repo root, on the
-   version branch:
-
-   ```bash
-   git checkout latest
-   sdkcraft try        # packs amd64+arm64 and registers it as `try-hermes-agent`
-   ```
-
-   `sdkcraft try` re-packs whenever a part changed; otherwise it reuses the
-   cached build.
-
-2. **Launch the example workshop.** First launch takes ~5–10 minutes
-   (Hermes clone, Python 3.11 venv, Node 22, Playwright Chromium); later
-   refreshes are fast because the runtime persists in the workshop's own
-   filesystem (a full `remove`/recreate redoes the install).
-
-   ```bash
-   cd examples
-   workshop launch --verbose
-   ```
-
-3. **Connect the LLM tunnel.** Tunnels do **not** auto-connect, even though
-   the connection is declared in `workshop.yaml` (mounts do auto-connect).
-   Run this once after launch:
-
-   ```bash
-   workshop connect hermes/hermes-agent:llm-backend \
-                    hermes/system:llm-backend
-   ```
-
-   > Note: in `connections:` the plug is referenced by the SDK's real name
-   > `hermes-agent`, **not** `try-hermes-agent` — the `try-` prefix is
-   > reserved in plug/slot references.
-
-4. **Verify.**
-
-   ```bash
-   workshop info                                    # status: ready
-   workshop run hermes status               # hermes version + gateway unit
-   workshop connections | grep tunnel               # llm-backend shows a slot, "manual"
-   workshop exec -- curl -s http://localhost:11434/v1/models   # HTTP 200 from host Ollama
-   ```
-
-5. **Use it.**
-
-   ```bash
-   workshop run hermes chat     # interactive chat (Ollama-backed)
-   workshop run hermes logs     # follow gateway logs
-   workshop shell hermes        # interactive session; project is at /project
-   ```
-
-To iterate on the SDK, edit `sdkcraft.yaml`/`hooks/`, re-run `sdkcraft try`,
-then `workshop refresh` (not remove+launch).
+(Omit the workshop name `hermes` if the project has only one workshop.)
 
 ---
 
-## Using the SDK
+## Configuration
 
-### Prerequisites and project layout
+### Messaging credentials
 
-No prerequisite SDKs are required, but the agent needs an LLM provider to be
-useful — either an `ollama` workshop wired via the `llm-backend` plug, or a
-remote endpoint (OpenAI / Anthropic / OpenRouter / NovitaAI) set in
-`~/.hermes/config.yaml`. No particular project layout is needed; `/project` is
-available to the agent for file tools, code execution, and `hermes skill` work.
+The gateway sits in `activating`/`failed` until credentials are in place, and
+the `check-health` hook reports `waiting` with a hint until then. Credentials
+live in `~/.hermes/secrets/.env` (the `hermes-secrets` mount); `setup-project`
+symlinks `~/.hermes/.env` to `secrets/.env` so the CLI and gateway see the same
+file.
 
-On first launch (`amd64` or `arm64`) the SDK installs uv, clones
-`NousResearch/hermes-agent` at the pinned VERSION, builds a Python 3.11 venv,
-fetches Node 22 (for the WhatsApp bridge — Ubuntu 24.04's apt Node is too old),
-installs Playwright Chromium, writes a default `config.yaml` if absent, and
-starts the gateway as a systemd user unit.
-
-### Configure messaging credentials
-
-The gateway will sit in `activating`/`failed` until credentials are in
-place. Credentials live in a dedicated `hermes-secrets` mount plug at
-`~/.hermes/secrets/.env`; `setup-project` also creates a symlink
-`~/.hermes/.env -> secrets/.env` so the hermes CLI sees the same file.
-
-**Edit from inside the workshop** (simplest):
+Edit them from inside the workshop:
 
 ```bash
 workshop shell
 $EDITOR ~/.hermes/secrets/.env
-# Add e.g. TELEGRAM_BOT_TOKEN=..., DISCORD_BOT_TOKEN=..., etc.
+# e.g. TELEGRAM_BOT_TOKEN=..., DISCORD_BOT_TOKEN=...
 systemctl --user restart hermes-gateway
 ```
 
-**Manage from a host directory** ([agenix](https://github.com/ryantm/agenix),
-[sops](https://github.com/getsops/sops), plain host file). The
-`hermes-secrets` plug is separate from `hermes-home` precisely so you can
-remount only the secrets without taking over the whole ~/.hermes tree:
+To manage secrets from the **host** instead, point the `hermes-secrets` mount
+at a host directory. It is separate from `hermes-home` so you can do this
+without owning the rest of `~/.hermes`:
 
 ```bash
-# On the host:
-mkdir -p ~/secrets/hermes
-$EDITOR ~/secrets/hermes/.env
-
-# Then from the workshop project:
 workshop remount <workshop>/hermes-agent:hermes-secrets ~/secrets/hermes
-workshop shell -c "systemctl --user restart hermes-gateway"
-```
-
-Or declare the connection in `workshop.yaml` via `system:mount` with
-`host-source: ~/secrets/hermes` so it survives `workshop remove` /
-`workshop launch` cycles.
-
-**Encrypted at rest (age).** The SDK has no dependency on any secret
-manager — `hermes-secrets` is just a mount, so *what backs it* is your
-choice. To keep credentials encrypted at rest, store an age-encrypted
-`hermes-env.age` (committed to your config repo), decrypt it at login into
-a tmpfs, and remount `hermes-secrets` there. Plaintext then lives only in
-RAM and the age key never enters the workshop:
-
-```bash
-# decrypt the committed ciphertext into the per-user tmpfs ($XDG_RUNTIME_DIR):
-install -d -m 700 "$XDG_RUNTIME_DIR/hermes-secrets"
-age -d -i ~/.ssh/id_ed25519 -o "$XDG_RUNTIME_DIR/hermes-secrets/.env" hermes-env.age
-
-# point the secrets mount at it (re-applied on future `workshop refresh`):
-workshop remount <workshop>/hermes-agent:hermes-secrets "$XDG_RUNTIME_DIR/hermes-secrets"
 workshop exec <workshop> -- systemctl --user restart hermes-gateway
 ```
 
-Wrap the decrypt step in a `systemd --user` oneshot unit (with
-`loginctl enable-linger`) to repopulate the tmpfs at every boot. `age`
-supports SSH ed25519 keys directly as the identity/recipient, so an
-existing key works — no separate keypair needed.
+The SDK depends on no secret manager. `hermes-secrets` is just a mount, so what
+backs it is your choice ([agenix](https://github.com/ryantm/agenix),
+[sops](https://github.com/getsops/sops), a plain host file, or an age-encrypted
+file decrypted at login into a tmpfs that you then remount).
 
-The `check-health` hook reports `waiting` with a remediation hint while
-the gateway is not active, so `workshop status` surfaces guidance.
+### Choosing an LLM backend
 
-### Running the hermes CLI
+The default `config.yaml` points at `http://localhost:11434/v1`, so the agent
+works out of the box once something answers on port 11434.
 
-The `hermes` CLI runs **inside the workshop** — the SDK installs a wrapper at
-`~/.local/bin/hermes` that puts the bundled Node 22 on `PATH` and execs the
-venv entrypoint. It is not installed on the host, so you invoke it through
-`workshop`. Three equivalent ways (workshop name `hermes` here; omit
-it if the project has only one workshop):
+- **Host-local or sibling-workshop Ollama**: wire the `llm-backend` tunnel plug
+  to the endpoint (see [Quick start](#quick-start), or connect it to an `ollama`
+  SDK's slot). No config changes needed.
+- **Hosted provider (OpenAI, Anthropic, OpenRouter, ...)**: no tunnel is needed.
+  The workshop reaches HTTPS providers over its normal outbound network. Set the
+  `model:` block in `~/.hermes/config.yaml` and add the key to `secrets/.env`:
 
-```bash
-# 1. One-off command in the workshop:
-workshop exec hermes -- hermes --version
+  ```yaml
+  # ~/.hermes/config.yaml
+  model:
+    provider: custom
+    default: anthropic/claude-3.5-sonnet     # a model the provider offers
+    base_url: https://openrouter.ai/api/v1   # the provider's /v1 endpoint
+    api_key: ${OPENROUTER_API_KEY}           # read from secrets/.env
+  ```
 
-# 2. Interactive login shell, then use hermes directly:
-workshop shell hermes
-#   then inside the shell:
-hermes chat
-hermes --version
+  ```bash
+  echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.hermes/secrets/.env
+  systemctl --user restart hermes-gateway
+  ```
 
-# 3. Via a named action defined in workshop.yaml (forwards trailing args):
-workshop run hermes chat -- --model openrouter/anthropic/claude-3.5-sonnet
-```
-
-The `chat` action above is just `hermes chat "$@"` from the workshop's
-`actions:` block — see `examples/workshop.yaml`.
-
-### Interactive chat
-
-No need to open a shell first — `exec` forwards a TTY, so chat works as a
-one-liner. Pass model overrides after the command:
-
-```bash
-workshop exec hermes -- hermes chat
-workshop exec hermes -- hermes chat --model openrouter/anthropic/claude-3.5-sonnet
-```
-
-Or `workshop run hermes chat` if the workshop defines the `chat` action.
-
-### Verify from the command line
-
-```bash
-workshop shell
-hermes --version
-systemctl --user status hermes-gateway
-```
+  (OpenAI: `https://api.openai.com/v1`; Anthropic: `https://api.anthropic.com/v1`.)
+  See [`examples/workshop.remote-openai.yaml`](examples/workshop.remote-openai.yaml).
 
 ---
 
 ## MCP servers
 
-Hermes can discover external tools from [MCP](https://modelcontextprotocol.io/)
-servers. List them under `mcp_servers:` in `~/.hermes/config.yaml`; Hermes
-loads them at startup, and `/reload-mcp` inside `hermes chat` re-reads the
-block without a restart. `setup-project` writes a commented `mcp_servers:`
-template into the default `config.yaml` to get you started.
+To give Hermes tools from an external
+[MCP](https://modelcontextprotocol.io/) server, two separate pieces are
+involved:
 
-Each server uses one of two transports:
+| | What it is | Lives in | When you need it |
+| --- | --- | --- | --- |
+| **`mcp_servers:` block** | Hermes config listing the servers to load | `~/.hermes/config.yaml` | For every MCP server you add |
+| **`mcp-server` plug** | A Workshop network tunnel to a server in *another* workshop | `workshop.yaml` | Only for an HTTP server in a sibling workshop |
 
-- **HTTP** — `url:` (plus optional `headers:`). The server runs as its own
-  process, in a sibling workshop or remotely. This is the recommended way to
-  wire another Workshop SDK, and the only one that works cleanly for the
-  long-running gateway daemon. Use the `mcp-server` tunnel plug.
-- **stdio** — `command:` / `args:` / `env:`. Hermes spawns the server as a
-  subprocess. The server's binary must be on `PATH` in the **same** workshop,
-  so its SDK must be added to the same `workshop.yaml`. No tunnel needed.
+Every server you want is declared in the `mcp_servers:` block. The `mcp-server`
+*plug* is just plumbing that makes a sibling workshop's HTTP server reachable; on
+its own it does not tell Hermes to use anything.
 
-In both cases, scope what Hermes sees with a `tools:` block — `include:` /
-`exclude:` lists, and `resources: false` / `prompts: false` to drop the MCP
-utility wrappers. Prefer an `include:` allowlist for servers that can write or
-delete.
+Each entry in `mcp_servers:` uses one transport:
 
-### Example: AFFiNE docs via the `affine-mcp-server` SDK (HTTP)
+- **stdio** (`command:`): Hermes spawns the server as a subprocess. Use this when
+  the server's binary is in the **same** workshop. No plug needed.
+- **HTTP** (`url:`): the server runs as its own process, elsewhere. For a server
+  in a **sibling workshop**, connect the `mcp-server` plug to its HTTP slot; the
+  server is then reachable inside the workshop at `http://localhost:3000/mcp`,
+  which is the `url:` you point at.
 
-The `affine-mcp-server` SDK runs the HTTP server itself (a managed systemd
-service) and generates the bearer token on first launch — Hermes is a pure
-consumer. See
+For the long-running gateway daemon, **prefer HTTP**: a systemd user unit does
+not source `/etc/profile.d`, so a stdio `command:` may not be on its `PATH`.
+(stdio is most reliable for interactive `hermes chat`, which runs in a login
+shell.) `setup-project` writes a commented `mcp_servers:` template into the
+default `config.yaml`, and `/reload-mcp` inside `hermes chat` re-reads the block
+without a restart.
+
+Scope what Hermes sees per server with a `tools:` block: `include:` / `exclude:`
+lists, plus `resources: false` / `prompts: false` to drop the MCP utility
+wrappers. Prefer an `include:` allowlist for servers that can write or delete.
+
+### Example: HTTP, sibling workshop (AFFiNE)
+
+Pair the agent with the `affine-mcp-server` SDK, which runs its own HTTP
+transport and exposes it as the `affine-mcp-http` slot. See
 [`examples/workshop.with-mcp.yaml`](examples/workshop.with-mcp.yaml) for the
-complete runnable file with `affine-login` / `enable-affine` actions.
-
-1. **Put both SDKs in one `workshop.yaml` and wire the tunnel.** The AFFiNE
-   server's HTTP slot feeds Hermes' `mcp-server` plug:
-
-   ```yaml
-   sdks:
-     - name: hermes-agent
-       channel: latest/stable
-     - name: affine-mcp-server
-       channel: latest/stable
-
-   connections:
-     - plug: hermes-agent:mcp-server
-       slot: affine-mcp-server:affine-mcp-http
-   ```
-
-2. **Authenticate the AFFiNE server.** It already serves :3000; you only need to
-   give it AFFiNE credentials, then restart it to pick them up:
-
-   ```bash
-   affine-mcp login                       # or set AFFINE_BASE_URL / AFFINE_API_TOKEN
-   systemctl --user restart affine-mcp-http
-   ```
-
-3. **Point Hermes at it.** Reference the server's bearer token (in
-   `~/.config/affine-mcp/.env`) rather than embedding it — copy it into
-   `~/.hermes/secrets/.env` and use `${AFFINE_MCP_HTTP_TOKEN}` in the header so
-   no secret is written into `config.yaml`:
-
-   ```yaml
-   # ~/.hermes/config.yaml
-   mcp_servers:
-     affine:
-       url: http://localhost:3000/mcp
-       headers:
-         Authorization: "Bearer ${AFFINE_MCP_HTTP_TOKEN}"
-       tools:
-         resources: false
-         prompts: false
-   ```
-
-   Then `systemctl --user restart hermes-gateway` (or `/reload-mcp` in chat).
-   Ask Hermes "Which MCP tools are available?" to confirm the AFFiNE tools
-   loaded. The `enable-affine` action in the example file does the token copy
-   and config edit for you.
-
-> **Cross-workshop variant.** The same wiring works with the AFFiNE server in
-> a *separate* workshop: launch it there, then
-> `workshop connect <hermes-ws>/hermes-agent:mcp-server
-> <affine-ws>/affine-mcp-server:affine-mcp-http`. The `mcp-server` plug exists
-> precisely so the HTTP transport can cross the sandbox boundary; tunnels do
-> not auto-connect, so run the `connect` once after launch. The two sandboxes
-> no longer share a home, so the bearer token must be provisioned into both
-> secret stores — read it from the AFFiNE workshop's `~/.config/affine-mcp/.env`
-> and add it to Hermes' `~/.hermes/secrets/.env`.
-
-### Alternative: stdio (same workshop, no tunnel)
-
-If you keep both SDKs in one workshop, Hermes can spawn `affine-mcp` directly
-over stdio — no HTTP server, no tunnel:
+complete runnable file.
 
 ```yaml
+# workshop.yaml: add the SDK and wire the plug to its HTTP slot
+sdks:
+  - name: hermes-agent
+    channel: latest/stable
+  - name: affine-mcp-server
+    channel: latest/stable
+
+connections:
+  - plug: hermes-agent:mcp-server
+    slot: affine-mcp-server:affine-mcp-http
+```
+
+```yaml
+# ~/.hermes/config.yaml: tell Hermes to load it
+mcp_servers:
+  affine:
+    url: http://localhost:3000/mcp
+    headers:
+      Authorization: "Bearer ${AFFINE_MCP_HTTP_TOKEN}"   # from secrets/.env
+    tools:
+      resources: false
+      prompts: false
+```
+
+The AFFiNE server generates a bearer token on first launch (in
+`~/.config/affine-mcp/.env`); copy it into `~/.hermes/secrets/.env` as
+`AFFINE_MCP_HTTP_TOKEN` and reference it with `${...}` rather than pasting it
+into `config.yaml`. Then restart the gateway (or run `/reload-mcp` in chat) and
+ask Hermes "Which MCP tools are available?" to confirm. (The example file's
+`enable-affine` action automates the token copy and config edit.)
+
+> The same wiring works across **separate** workshops: launch the AFFiNE
+> workshop, then `workshop connect <hermes-ws>/hermes-agent:mcp-server
+> <affine-ws>/affine-mcp-server:affine-mcp-http`. The two sandboxes no longer
+> share a home, so provision the token into Hermes' `secrets/.env` directly.
+
+### Example: stdio, same workshop
+
+If the server's binary is in the same workshop, Hermes can spawn it directly,
+with no HTTP server and no plug:
+
+```yaml
+# ~/.hermes/config.yaml
 mcp_servers:
   affine:
     command: affine-mcp
@@ -350,185 +245,85 @@ mcp_servers:
       prompts: false
 ```
 
-Caveat: the gateway runs as a systemd **user** unit, which does not source
-`/etc/profile.d`, so `affine-mcp` may not be on its `PATH`. stdio is most
-reliable for interactive `hermes chat` (a login shell); for the gateway daemon
-prefer the HTTP transport above, or give the `command:` an absolute path.
+(See the `PATH` caveat above. For the gateway daemon, use HTTP or give
+`command:` an absolute path.)
 
-## Plugs (resources this SDK consumes)
+### Adding a server from the command line
 
-> **Persistence model.** Only the agent's config/state and its secrets are
-> mounted. The rebuildable runtime — the `hermes-agent` clone and Python
-> venv (`~/hermes-agent`), bundled Node 22 (`~/.local/lib/hermes/node`), and
-> the uv/npm/Playwright caches (`~/.cache/uv`, `~/.npm`,
-> `~/.cache/ms-playwright`) — lives in the workshop sandbox, not on the host.
-> It persists across `workshop refresh` (same container) and is rebuilt only
-> on a full recreate.
-
-### `hermes-home`
-
-- Interface: `mount`
-- Workshop target: `/home/workshop/.hermes`
-- Mode: `0o700`
-- Purpose: The agent's config and state — `config.yaml`, `.env` (symlink),
-  `SOUL.md`, persistent memory, skills, and sessions. **Not** the runtime
-  (clone/venv/Node/caches all live in the sandbox). Like claude-code's
-  `claude-config`, this mount auto-connects to Workshop-allocated storage
-  and survives `workshop refresh`. To manage it on a host path instead:
-  `workshop stop <ws>` →
-  `workshop remount <ws>/hermes-agent:hermes-home <host-path>` →
-  `workshop start <ws>`.
-
-### `hermes-secrets`
-
-- Interface: `mount`
-- Workshop target: `/home/workshop/.hermes/secrets`
-- Mode: `0o700`
-- Purpose: Dedicated mount for credentials (`.env`). Narrower than
-  `hermes-home` so the host can manage just the secrets directory with
-  a host-side secret manager ([agenix](https://github.com/ryantm/agenix),
-  [sops](https://github.com/getsops/sops), plain file) without taking
-  over the rest of `~/.hermes`. `setup-project` symlinks
-  `~/.hermes/.env -> secrets/.env` so the hermes CLI and the gateway
-  systemd unit see the same file.
-
-### `llm-backend`
-
-- Interface: `tunnel`
-- Endpoint: `11434`
-- Purpose: Outbound connection to an Ollama-compatible OpenAI endpoint.
-  Two patterns work — wire to a sibling SDK's slot, or to a
-  `system:` tunnel slot pointing at a host address. When connected,
-  `http://localhost:11434/v1` (the default in the SDK-provisioned
-  `config.yaml`) tunnels to whatever the slot points at.
-
-#### Sibling workshop SDK (Ollama in another workshop on the same host)
-
-```yaml
-sdks:
-  - name: hermes-agent
-    channel: latest/stable
-  - name: ollama
-    channel: latest/stable
-
-connections:
-  - plug: hermes-agent:llm-backend
-    slot: ollama:ollama-server
-```
-
-#### Host-reachable Ollama
-
-The `system` SDK exposes a tunnel slot pointing at any host-reachable
-endpoint. No config rewrite or post-launch step needed:
-
-```yaml
-sdks:
-  - name: hermes-agent
-    channel: latest/stable
-  - name: system
-    slots:
-      llm-backend:
-        interface: tunnel
-        endpoint: ozymandias:11434   # or localhost:11434 for same-host
-
-connections:
-  - plug: hermes-agent:llm-backend
-    slot: system:llm-backend
-```
-
-See `examples/workshop.yaml` in this repo for a complete runnable
-variant.
-
-#### Remote provider (OpenAI / Anthropic / OpenRouter)
-
-For HTTPS providers reached over the public internet, skip the tunnel wiring
-entirely — the workshop's outbound network reaches them directly, so the
-`llm-backend` plug and `system:` slot aren't needed. Use a plain
-`workshop.yaml` (just `- name: hermes-agent`), set the `model:` block in
-`~/.hermes/config.yaml`, and add the API key to `~/.hermes/secrets/.env`:
-
-```yaml
-# ~/.hermes/config.yaml — OpenRouter example
-model:
-  provider: custom
-  default: anthropic/claude-3.5-sonnet     # a model the provider offers
-  base_url: https://openrouter.ai/api/v1   # the provider's /v1 endpoint
-  api_key: ${OPENROUTER_API_KEY}           # read from secrets/.env
-```
+The SDK installs a `hermes-mcp-add` helper that edits the `mcp_servers:` block
+for you, merging by name so re-running updates an entry in place.
+`examples/workshop.with-mcp.yaml` wraps it as an `mcp-add` action that also
+reloads the gateway:
 
 ```bash
-echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.hermes/secrets/.env
-systemctl --user restart hermes-gateway
+# HTTP server in a sibling workshop, with an auth header from secrets/.env:
+workshop run hermes mcp-add -- affine --url http://localhost:3000/mcp \
+    --header 'Authorization: Bearer ${AFFINE_MCP_HTTP_TOKEN}'
+
+# stdio server in the same workshop:
+workshop run hermes mcp-add -- weather --command weather-mcp --env API_KEY=xyz
+
+# remove an entry:
+workshop run hermes mcp-add -- affine --remove
 ```
 
-(For OpenAI use `https://api.openai.com/v1`; for Anthropic's OpenAI-compatible
-endpoint `https://api.anthropic.com/v1`.) See
-`examples/workshop.remote-openai.yaml` for a runnable variant with
-`set-token` / `set-endpoint` actions that do this for you.
-
-### `mcp-server`
-
-- Interface: `tunnel`
-- Endpoint: `3000`
-- Purpose: Outbound connection to an MCP server's HTTP transport running in a
-  sibling workshop, so Hermes can discover and use its tools. Connect this
-  plug to the server's HTTP slot (e.g. the `affine-mcp-server` SDK's
-  `affine-mcp-http` slot); the server is then reachable inside the workshop at
-  `http://localhost:3000/mcp`, which is what an `mcp_servers:` entry in
-  `~/.hermes/config.yaml` points at. The endpoint defaults to `3000` to match
-  `affine-mcp-http`; change it to match another server's port. Not needed for
-  MCP servers that run in the **same** workshop over stdio — see the
-  [MCP servers](#mcp-servers) section.
-
-## Slots (resources this SDK provides)
-
-### `gateway`
-
-- Interface: `tunnel`
-- Endpoint: `8765`
-- Purpose: Exposes the gateway process's loopback presence to host
-  tooling. Useful for future host-side probes against `hermes gateway`
-  status endpoints.
+It applies the `resources: false` / `prompts: false` scoping by default
+(`--keep-resources` / `--keep-prompts` to opt out, `--include TOOL` for an
+allowlist). It rewrites `config.yaml` through PyYAML, so inline comments in that
+file are not preserved.
 
 ---
 
-## Documentation and guidance
+## Interfaces
 
-- [Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/)
-- [Hermes Agent on GitHub](https://github.com/NousResearch/hermes-agent)
-- [Workshop documentation](https://ubuntu.com/workshop/docs/)
+### Persistence model
+
+Only the agent's config/state and secrets are mounted. The rebuildable runtime
+lives in the workshop sandbox, not on the host: the `hermes-agent` clone and
+Python venv (`~/hermes-agent`), bundled Node 22 (`~/.local/lib/hermes/node`),
+and the uv/npm/Playwright caches. It persists across `workshop refresh` (same
+container) and is rebuilt only on a full recreate.
+
+### Plugs (consumed)
+
+| Plug | Interface | Endpoint / target | Purpose |
+| --- | --- | --- | --- |
+| `hermes-home` | mount | `~/.hermes` (`0o700`) | Agent config and state: `config.yaml`, `.env` (symlink), `SOUL.md`, memory, skills, sessions. Auto-connects to Workshop storage; survives `refresh`. |
+| `hermes-secrets` | mount | `~/.hermes/secrets` (`0o700`) | Credentials (`.env`), as a narrower mount so the host can manage just the secrets. See [Messaging credentials](#messaging-credentials). |
+| `llm-backend` | tunnel | `11434` | Ollama-compatible OpenAI endpoint. See [Choosing an LLM backend](#choosing-an-llm-backend). |
+| `memory-backend` | tunnel | `8000` | Optional external memory service (e.g. a mem0/hindsight SDK) instead of built-in markdown memory. |
+| `mcp-server` | tunnel | `3000` | HTTP MCP server in a sibling workshop. See [MCP servers](#mcp-servers). |
+| `cognee-plugin` | mount | `~/.hermes/plugins/cognee_local` (`0o755`) | Optional memory-provider plugin delivered by mount (e.g. from the cognee-hermes-memory SDK). |
+
+To manage a mount on a host path: `workshop stop <ws>`, then
+`workshop remount <ws>/hermes-agent:<plug> <host-path>`, then `workshop start <ws>`.
+
+### Slots (provided)
+
+| Slot | Interface | Endpoint | Purpose |
+| --- | --- | --- | --- |
+| `gateway` | tunnel | `8765` | Exposes the gateway's loopback presence so host tooling can probe `hermes gateway` status endpoints. |
 
 ---
 
-## Community and support
+## Documentation and support
 
-- Nous Research community:
-  [Discord](https://discord.gg/jqVphNsB4H) /
-  [GitHub Discussions](https://github.com/NousResearch/hermes-agent/discussions)
-- Workshop forum:
-  [Discourse](https://discourse.ubuntu.com/)
-- Please review our
-  [Code of Conduct](https://ubuntu.com/community/ethos/code-of-conduct)
-  before participating.
-
----
-
-## Contributions
-
-All contributions, including code, documentation updates, and issue
-reports, are welcome!
-
-- See `CONTRIBUTING.md` for guidelines (forthcoming).
-- Open issues or pull requests on the official repository.
+- [Hermes Agent docs](https://hermes-agent.nousresearch.com/docs/) ·
+  [GitHub](https://github.com/NousResearch/hermes-agent) ·
+  [Discord](https://discord.gg/jqVphNsB4H) ·
+  [Discussions](https://github.com/NousResearch/hermes-agent/discussions)
+- [Workshop docs](https://ubuntu.com/workshop/docs/) ·
+  [Forum](https://discourse.ubuntu.com/)
+- Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+  local build/test workflow, and the
+  [Code of Conduct](https://ubuntu.com/community/ethos/code-of-conduct) before
+  participating.
 
 ---
 
-## License and copyright
+## License
 
-Copyright 2026 Matias Piipari.
-
-This SDK is licensed under the
+Copyright 2026 Matias Piipari. Licensed under the
 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html).
-
-The Hermes Agent itself is developed by Nous Research; consult its
-repository for its upstream license terms.
+The Hermes Agent itself is developed by Nous Research; consult its repository
+for upstream license terms.
