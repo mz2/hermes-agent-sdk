@@ -98,6 +98,19 @@ actions:
     systemctl --user restart hermes-gateway
     echo "Restarted hermes-gateway. In 'hermes chat' you can also run /reload-mcp."
 
+  # Generic alternative to enable-affine: add/update/remove ANY MCP server in
+  # ~/.hermes/config.yaml, then reload the gateway. Wraps the SDK's
+  # hermes-mcp-add helper (installed in ~/.local/bin). Examples:
+  #   workshop run hermes mcp-add -- affine --url http://localhost:3000/mcp \
+  #       --header 'Authorization: Bearer ${AFFINE_MCP_HTTP_TOKEN}'
+  #   workshop run hermes mcp-add -- weather --command weather-mcp --env API_KEY=xyz
+  #   workshop run hermes mcp-add -- affine --remove
+  # (Single-quote a ${VAR} header so the shell leaves it for Hermes to expand.)
+  mcp-add: |
+    hermes-mcp-add "$@"
+    systemctl --user restart hermes-gateway
+    echo "Updated mcp_servers and restarted hermes-gateway (or /reload-mcp in chat)."
+
   # Interactive chat. Ask "Which MCP tools are available?" to confirm the
   # AFFiNE tools loaded.
   chat: |
