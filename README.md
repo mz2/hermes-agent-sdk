@@ -7,10 +7,9 @@ Nous Research that creates skills from experience, maintains persistent memory,
 and bridges to messaging platforms (Telegram, Discord, WhatsApp, Slack, Signal,
 Email) via its gateway daemon.
 
-The agent's rebuildable runtime (the clone, Python venv, bundled Node 22, and
-caches) lives inside the workshop sandbox; only its config/state (`~/.hermes`)
-and secrets (`.env`) persist via mount plugs. See
-[Persistence model](#persistence-model) for details.
+Your config, state, and secrets (under `~/.hermes`) persist across rebuilds via
+mount plugs; the agent runtime is reinstalled into the workshop sandbox as
+needed. See [Persistence model](#persistence-model).
 
 ---
 
@@ -166,25 +165,48 @@ its own it does not tell Hermes to use anything.
 
 Each entry in `mcp_servers:` uses one transport:
 
-- **stdio** (`command:`): Hermes spawns the server as a subprocess. Use this when
-  the server's binary is in the **same** workshop. No plug needed.
-- **HTTP** (`url:`): the server runs as its own process, elsewhere. For a server
-  in a **sibling workshop**, connect the `mcp-server` plug to its HTTP slot; the
-  server is then reachable inside the workshop at `http://localhost:3000/mcp`,
-  which is the `url:` you point at.
+- **stdio** (`command:`): Hermes spawns the server as a subprocess. Use it when
+  the server's binary is in the **same** workshop; no plug needed. Works best for
+  interactive `hermes chat`. The gateway daemon runs with a minimal `PATH`, so
+  for it either use HTTP or give `command:` an absolute path.
+- **HTTP** (`url:`): the server runs elsewhere as its own process. For a server
+  in a **sibling workshop**, connect the `mcp-server` plug to its HTTP slot; it is
+  then reachable at `http://localhost:3000/mcp`, the `url:` you point at. This is
+  the reliable choice for the gateway daemon.
 
-For the long-running gateway daemon, **prefer HTTP**: a systemd user unit does
-not source `/etc/profile.d`, so a stdio `command:` may not be on its `PATH`.
-(stdio is most reliable for interactive `hermes chat`, which runs in a login
-shell.) `setup-project` writes a commented `mcp_servers:` template into the
-default `config.yaml`, and `/reload-mcp` inside `hermes chat` re-reads the block
-without a restart.
+Scope what Hermes sees per server with a `tools:` block:
 
-Scope what Hermes sees per server with a `tools:` block: `include:` / `exclude:`
-lists, plus `resources: false` / `prompts: false` to drop the MCP utility
-wrappers. Prefer an `include:` allowlist for servers that can write or delete.
+- `include:` / `exclude:` lists select which tools are exposed. Prefer an
+  `include:` allowlist for servers that can write or delete.
+- `resources: false` / `prompts: false` drop the MCP resource and prompt wrappers.
 
-### Example: HTTP, sibling workshop (AFFiNE)
+### Registering a server
+
+Use the `mcp-add` action, which edits `config.yaml` and reloads the gateway. (Or
+hand-edit the `mcp_servers:` block directly, using the commented template already
+in `config.yaml`, then restart the gateway or run `/reload-mcp` in chat.) It
+merges by name, so re-running updates an entry in place:
+
+```bash
+# HTTP server in a sibling workshop, with an auth header from secrets/.env:
+workshop run hermes mcp-add -- affine --url http://localhost:3000/mcp \
+    --header 'Authorization: Bearer ${AFFINE_MCP_HTTP_TOKEN}'
+
+# stdio server in the same workshop:
+workshop run hermes mcp-add -- weather --command weather-mcp --env API_KEY=xyz
+
+# remove an entry:
+workshop run hermes mcp-add -- affine --remove
+```
+
+It applies the `resources: false` / `prompts: false` scoping by default
+(`--keep-resources` / `--keep-prompts` to opt out, `--include TOOL` for an
+allowlist). For a server that writes its token to a dotenv, `--bearer-from FILE
+--bearer-var NAME` copies that token into `secrets/.env` and sets the
+`Authorization: Bearer ${NAME}` header. It rewrites `config.yaml` through PyYAML,
+so inline comments in that file are not preserved.
+
+### Example: AFFiNE over HTTP (sibling workshop)
 
 Pair the agent with the `affine-mcp-server` SDK, which runs its own HTTP
 transport and exposes it as the `affine-mcp-http` slot. See
@@ -204,73 +226,19 @@ connections:
     slot: affine-mcp-server:affine-mcp-http
 ```
 
-```yaml
-# ~/.hermes/config.yaml: tell Hermes to load it
-mcp_servers:
-  affine:
-    url: http://localhost:3000/mcp
-    headers:
-      Authorization: "Bearer ${AFFINE_MCP_HTTP_TOKEN}"   # from secrets/.env
-    tools:
-      resources: false
-      prompts: false
-```
-
-The AFFiNE server generates a bearer token on first launch (in
-`~/.config/affine-mcp/.env`); copy it into `~/.hermes/secrets/.env` as
-`AFFINE_MCP_HTTP_TOKEN` and reference it with `${...}` rather than pasting it
-into `config.yaml`. Then restart the gateway (or run `/reload-mcp` in chat) and
-ask Hermes "Which MCP tools are available?" to confirm. (The example file's
-`enable-affine` action automates the token copy and config edit.)
-
-> The same wiring works across **separate** workshops: launch the AFFiNE
-> workshop, then `workshop connect <hermes-ws>/hermes-agent:mcp-server
-> <affine-ws>/affine-mcp-server:affine-mcp-http`. The two sandboxes no longer
-> share a home, so provision the token into Hermes' `secrets/.env` directly.
-
-### Example: stdio, same workshop
-
-If the server's binary is in the same workshop, Hermes can spawn it directly,
-with no HTTP server and no plug:
-
-```yaml
-# ~/.hermes/config.yaml
-mcp_servers:
-  affine:
-    command: affine-mcp
-    env:
-      AFFINE_TOOL_PROFILE: read_only
-    tools:
-      resources: false
-      prompts: false
-```
-
-(See the `PATH` caveat above. For the gateway daemon, use HTTP or give
-`command:` an absolute path.)
-
-### Adding a server from the command line
-
-The SDK installs a `hermes-mcp-add` helper that edits the `mcp_servers:` block
-for you, merging by name so re-running updates an entry in place.
-`examples/workshop.with-mcp.yaml` wraps it as an `mcp-add` action that also
-reloads the gateway:
+The AFFiNE server generates its own bearer token on first launch. Point
+`mcp-add` at the server's dotenv with `--bearer-from`; it copies that token into
+`secrets/.env` and sets the auth header for you:
 
 ```bash
-# HTTP server in a sibling workshop, with an auth header from secrets/.env:
 workshop run hermes mcp-add -- affine --url http://localhost:3000/mcp \
-    --header 'Authorization: Bearer ${AFFINE_MCP_HTTP_TOKEN}'
-
-# stdio server in the same workshop:
-workshop run hermes mcp-add -- weather --command weather-mcp --env API_KEY=xyz
-
-# remove an entry:
-workshop run hermes mcp-add -- affine --remove
+    --bearer-from ~/.config/affine-mcp/.env --bearer-var AFFINE_MCP_HTTP_TOKEN
+workshop run hermes chat   # ask "Which MCP tools are available?" to confirm
 ```
 
-It applies the `resources: false` / `prompts: false` scoping by default
-(`--keep-resources` / `--keep-prompts` to opt out, `--include TOOL` for an
-allowlist). It rewrites `config.yaml` through PyYAML, so inline comments in that
-file are not preserved.
+> Across separate workshops the wiring is the same, but connect the plug by hand
+> after launch: `workshop connect <hermes-ws>/hermes-agent:mcp-server
+> <affine-ws>/affine-mcp-server:affine-mcp-http`.
 
 ---
 
@@ -278,11 +246,11 @@ file are not preserved.
 
 ### Persistence model
 
-Only the agent's config/state and secrets are mounted. The rebuildable runtime
-lives in the workshop sandbox, not on the host: the `hermes-agent` clone and
-Python venv (`~/hermes-agent`), bundled Node 22 (`~/.local/lib/hermes/node`),
-and the uv/npm/Playwright caches. It persists across `workshop refresh` (same
-container) and is rebuilt only on a full recreate.
+Only your config, state, and secrets are mounted and persisted: everything
+under `~/.hermes` (`config.yaml`, memory, skills, sessions, and `secrets/.env`).
+The agent runtime is installed into the workshop sandbox, not onto host storage.
+It survives `workshop refresh` and is rebuilt automatically only on a full
+recreate, so you never need to back it up.
 
 ### Plugs (consumed)
 
