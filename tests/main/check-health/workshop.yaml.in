@@ -1,4 +1,0 @@
-name: test-hermes
-base: ${BASE}
-sdks:
-  - name: try-hermes-agent
