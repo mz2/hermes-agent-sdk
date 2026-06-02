@@ -89,5 +89,23 @@ H="$WORK/home-fresh"; mkdir -p "$H"   # no config.yaml seeded
 run "$H" affine --url http://x/mcp >/dev/null
 check "creates config"       "$(probe "$H/config.yaml" "cfg['mcp_servers']['affine']['url']")" "http://x/mcp"
 
+# 9. --bearer-from copies a token into secrets/.env and sets the header ----
+H="$(new_home bearer)"
+SRC="$WORK/affine.env"; printf 'OTHER=1\nAFFINE_MCP_HTTP_TOKEN=secrettok\n' > "$SRC"
+run "$H" affine --url http://localhost:3000/mcp --bearer-from "$SRC" --bearer-var AFFINE_MCP_HTTP_TOKEN >/dev/null
+check "bearer header"        "$(probe "$H/config.yaml" "cfg['mcp_servers']['affine']['headers']['Authorization']")" 'Bearer ${AFFINE_MCP_HTTP_TOKEN}'
+check "bearer secret stored" "$(grep -c '^AFFINE_MCP_HTTP_TOKEN=secrettok$' "$H/secrets/.env")" "1"
+
+# 10. --bearer-from error cases ------------------------------------------
+H="$(new_home bearer-err)"; SRC="$WORK/affine.env"
+run "$H" affine --url http://x/mcp --bearer-from "$SRC" --bearer-var MISSING >/dev/null 2>&1
+check "bearer var missing -> error"  "$?" "1"
+run "$H" affine --url http://x/mcp --bearer-from "$SRC" >/dev/null 2>&1
+check "bearer without var -> error"  "$?" "1"
+run "$H" affine --command c --bearer-from "$SRC" --bearer-var AFFINE_MCP_HTTP_TOKEN >/dev/null 2>&1
+check "bearer with command -> error" "$?" "1"
+run "$H" affine --url http://x/mcp --bearer-from "$WORK/nope.env" --bearer-var X >/dev/null 2>&1
+check "bearer file missing -> error" "$?" "1"
+
 [ "$fail" -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
