@@ -14,9 +14,17 @@
 #   --keep-resources   keep MCP resource wrappers (default: resources: false)
 #   --keep-prompts     keep MCP prompt wrappers   (default: prompts: false)
 #
-# It edits config.yaml only. Apply the change with `systemctl --user restart
-# hermes-gateway`, or `/reload-mcp` inside `hermes chat`. The `mcp-add` action
-# in the example workshop.yaml wraps this helper and restarts the gateway.
+# HTTP auth helper (with --url):
+#   --bearer-from FILE --bearer-var NAME
+#       Read NAME=token from the dotenv FILE (e.g. another SDK's generated
+#       token), copy it into ~/.hermes/secrets/.env, and add the header
+#       Authorization: Bearer ${NAME}. No secret is typed on the CLI or written
+#       literally into config.yaml.
+#
+# It edits config.yaml (and, with --bearer-from, secrets/.env). Apply the change
+# with `systemctl --user restart hermes-gateway`, or `/reload-mcp` inside
+# `hermes chat`. The `mcp-add` action in the example workshop.yaml wraps this
+# helper and restarts the gateway.
 #
 # HERMES_HOME (default ~/.hermes) and HERMES_PY (default the hermes venv's
 # python, which has PyYAML) can be overridden, e.g. for testing.
@@ -39,7 +47,7 @@ if not args or args[0].startswith("-"):
     sys.exit("usage: hermes-mcp-add NAME (--url URL | --command CMD | --remove) [...]")
 
 name, rest = args[0], args[1:]
-url = command = None
+url = command = bearer_from = bearer_var = None
 headers, env, cmd_args, include = {}, {}, [], []
 remove = keep_resources = keep_prompts = False
 
@@ -65,6 +73,10 @@ while i < len(rest):
         k, _, v = take(i).partition("="); env[k] = v; i += 2
     elif a == "--include":
         include.append(take(i)); i += 2
+    elif a == "--bearer-from":
+        bearer_from = take(i); i += 2
+    elif a == "--bearer-var":
+        bearer_var = take(i); i += 2
     elif a == "--remove":
         remove = True; i += 1
     elif a == "--keep-resources":
@@ -73,6 +85,37 @@ while i < len(rest):
         keep_prompts = True; i += 1
     else:
         sys.exit(f"hermes-mcp-add: unknown option {a!r}")
+
+
+def env_key(line):
+    s = line.strip()
+    if s.startswith("export "):
+        s = s[len("export "):]
+    return s.split("=", 1)[0].strip()
+
+
+def read_env_value(path, var):
+    p = pathlib.Path(path)
+    if not p.exists():
+        sys.exit(f"hermes-mcp-add: --bearer-from file not found: {path}")
+    for line in p.read_text().splitlines():
+        if env_key(line) != var:
+            continue
+        v = line.split("=", 1)[1].strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        return v
+    return None
+
+
+def set_secret(secrets_path, var, value):
+    secrets_path.parent.mkdir(parents=True, exist_ok=True)
+    kept = []
+    if secrets_path.exists():
+        kept = [l for l in secrets_path.read_text().splitlines() if env_key(l) != var]
+    secrets_path.write_text("\n".join(kept + [f"{var}={value}"]) + "\n")
+    secrets_path.chmod(0o600)
+
 
 cfg = (yaml.safe_load(config_path.read_text()) if config_path.exists() else {}) or {}
 servers = cfg.get("mcp_servers")
@@ -87,9 +130,19 @@ if remove:
 else:
     if (url is None) == (command is None):
         sys.exit("hermes-mcp-add: give exactly one of --url or --command")
+    if bearer_from is not None and url is None:
+        sys.exit("hermes-mcp-add: --bearer-from only applies to --url")
     entry = {}
     if url is not None:
         entry["url"] = url
+        if bearer_from is not None:
+            if bearer_var is None:
+                sys.exit("hermes-mcp-add: --bearer-from requires --bearer-var")
+            token = read_env_value(bearer_from, bearer_var)
+            if token is None:
+                sys.exit(f"hermes-mcp-add: {bearer_var} not found in {bearer_from}")
+            set_secret(config_path.parent / "secrets" / ".env", bearer_var, token)
+            headers["Authorization"] = "Bearer ${%s}" % bearer_var
         if headers:
             entry["headers"] = headers
     else:
