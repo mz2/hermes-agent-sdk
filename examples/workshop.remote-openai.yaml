@@ -47,8 +47,8 @@ actions:
     echo "Stored $var in ~/.hermes/secrets/.env and restarted the gateway."
 
   # Point the agent at the remote endpoint + model. Rewrites the `model:`
-  # block of ~/.hermes/config.yaml in place using the venv's Python (which has
-  # PyYAML), leaving every other section untouched.
+  # block of ~/.hermes/config.yaml in place using the SDK runtime's Python
+  # (which has PyYAML), leaving every other section untouched.
   #   workshop run hermes set-endpoint -- <base_url> <model> [ENV_VAR_NAME]
   #   workshop run hermes set-endpoint -- \
   #       https://openrouter.ai/api/v1 anthropic/claude-3.5-sonnet OPENROUTER_API_KEY
@@ -57,7 +57,7 @@ actions:
     if [ -z "$base_url" ] || [ -z "$model" ]; then
       echo "usage: set-endpoint <base_url> <model> [ENV_VAR_NAME]" >&2; exit 1
     fi
-    ~/hermes-agent/venv/bin/python - "$base_url" "$model" "$var" <<'PY'
+    "${SDK:-/var/lib/workshop/sdk/hermes-agent}/bin/python" - "$base_url" "$model" "$var" <<'PY'
     import sys, yaml, pathlib
     base_url, model, var = sys.argv[1:4]
     cfg_path = pathlib.Path.home() / ".hermes" / "config.yaml"

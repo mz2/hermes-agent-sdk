@@ -41,8 +41,10 @@ jobs:
         env:
           INPUT_BRANCH: ${{ inputs.branch }}
 
-      - name: Pack SDK for amd64
-        run: sdkcraft --verbose pack --build-for amd64
+      - name: Pack SDKs for amd64 (all supported bases)
+        run: |
+          sdkcraft --verbose pack --platform ubuntu@24.04:amd64
+          sdkcraft --verbose pack --platform ubuntu@26.04:amd64
 
       - name: Upload amd64 SDK
         env:
@@ -76,8 +78,10 @@ jobs:
         env:
           INPUT_BRANCH: ${{ inputs.branch }}
 
-      - name: Pack SDK for arm64
-        run: sdkcraft --verbose pack --build-for arm64
+      - name: Pack SDKs for arm64 (all supported bases)
+        run: |
+          sdkcraft --verbose pack --platform ubuntu@24.04:arm64
+          sdkcraft --verbose pack --platform ubuntu@26.04:arm64
 
       - name: Upload arm64 SDK
         env:

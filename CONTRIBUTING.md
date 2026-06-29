@@ -1,8 +1,8 @@
 # Contributing
 
 This SDK is defined by `sdkcraft.yaml`, the `hooks/` scripts, and the bundled
-`services/` unit. The agent runtime itself is installed at launch by
-`hooks/setup-project`, not built into the package.
+`services/` unit. The Hermes runtime is built into the SDK payload as a
+pre-built Python virtual environment.
 
 ## Build and try locally
 
@@ -20,8 +20,8 @@ workshop run hermes chat
 ## Iterate
 
 Edit `sdkcraft.yaml` or `hooks/`, re-run `sdkcraft try`, then `workshop refresh`
-(not remove+launch). `setup-project` is idempotent: on refresh it short-circuits
-when the version matches, or upgrades in place.
+(not remove+launch). `setup-project` is idempotent for config/secrets/service
+provisioning.
 
 > In `connections:`, reference the plug by the SDK's real name `hermes-agent`,
 > **not** `try-hermes-agent`. The `try-` prefix is reserved in plug/slot

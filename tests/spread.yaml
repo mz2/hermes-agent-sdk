@@ -11,6 +11,7 @@ backends:
 
 suites:
   main/:
-    summary: Test the hermes-agent SDK inside workshops
+    summary: Test the hermes-agent SDK inside workshops with different bases
     environment:
       BASE/noble: ubuntu@24.04
+      BASE/resolute: ubuntu@26.04
