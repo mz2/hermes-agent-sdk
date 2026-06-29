@@ -15,11 +15,6 @@ experience, maintains persistent memory, and bridges to messaging platforms
 - A systemd user service (`hermes-gateway.service`) for the gateway
 - Tunnel plugs for LLM (`11434`) and optional external memory backend (`8000`)
 
-Supported bases:
-
-- `ubuntu@24.04` (amd64, arm64)
-- `ubuntu@26.04` (amd64, arm64)
-
 ## Quick Start
 
 Minimal `workshop.yaml` pairing Hermes with a host-local Ollama-compatible
@@ -82,6 +77,11 @@ Credentials live in:
 
 `setup-project` symlinks `~/.hermes/.env` to `secrets/.env` so both the CLI and
 the gateway service use the same file.
+
+The SDK enables the gateway unit during setup but does not auto-start it on
+first install. If you start it yourself, refreshes preserve that running state:
+the SDK records whether the unit was active before refresh and starts it again
+after restore.
 
 ## Interfaces
 
