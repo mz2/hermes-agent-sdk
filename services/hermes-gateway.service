@@ -12,10 +12,9 @@ Type=simple
 # reports "waiting" with a remediation message.
 EnvironmentFile=-%h/.hermes/secrets/.env
 
-# Use a login shell so PATH picks up ~/.local/bin (the hermes wrapper). The
-# wrapper itself prepends the bundled Node 22 (~/.local/lib/hermes/node/bin)
-# and execs the venv entrypoint, so child node processes inherit it too.
-ExecStart=/bin/bash -lc "hermes gateway"
+# `hermes` is symlinked into /usr/local/bin by setup-base, so it's on PATH
+# for login and non-login shells alike — no profile.d sourcing needed.
+ExecStart=/bin/bash -lc "hermes gateway run"
 
 Restart=on-failure
 RestartSec=5

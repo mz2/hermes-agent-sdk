@@ -1,0 +1,27 @@
+summary: Launch workshop and validate hermes + gateway service wiring
+
+prepare: |
+  envsubst '${BASE}' <workshop.yaml.in >workshop.yaml
+  workshop launch
+
+restore: |
+  workshop remove || true
+
+execute: |
+  echo "[1/3] hermes is on PATH"
+  workshop exec -- command -v hermes | MATCH '/hermes$'
+
+  echo "[2/3] gateway unit is enabled"
+  workshop exec -- systemctl --user is-enabled hermes-gateway.service | MATCH '^enabled$'
+
+  echo "[3/3] gateway can be started"
+  # Start is idempotent: returns success if already active.
+  workshop exec -- systemctl --user start hermes-gateway.service
+  workshop exec -- systemctl --user is-active hermes-gateway.service | MATCH '^active$'
+
+  echo "ALL PASS"
+
+debug: |
+  workshop exec -- command -v hermes || true
+  workshop exec -- systemctl --user is-enabled hermes-gateway.service || true
+  workshop exec -- systemctl --user status hermes-gateway.service --no-pager --lines=40 || true

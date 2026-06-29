@@ -15,9 +15,10 @@
 #       workshop launch --verbose
 #     and set:    `name: hermes-agent` + `channel: latest/stable`
 #
-# First launch takes ~5–10 minutes — Hermes clones, the Python 3.11 venv
-# builds, Node 22 + Playwright Chromium download. Refreshes after that
-# are fast because everything persists under the SDK's mount plugs.
+# On first launch the SDK uses its pre-built runtime under
+# /var/lib/workshop/sdk/hermes-agent and provisions config/secrets/service
+# state under ~/.hermes. Refreshes are fast because runtime bits are already
+# in the SDK payload.
 #
 # After launch, connect the LLM tunnel once (tunnels do not auto-connect
 # even though the connection is declared below):

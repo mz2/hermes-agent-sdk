@@ -1,143 +1,23 @@
 #!/usr/bin/bash
-# setup-project: per-workshop user setup. Runs as the workshop user after
-# setup-base, after interfaces are connected. Idempotent — re-running on
-# refresh either short-circuits (version matches) or upgrades in place.
-#
-# What this does, in order:
-#   1. Ensure ~/.hermes exists (mount plug target).
-#   2. Install uv if missing.
-#   3. Clone or fast-forward NousResearch/hermes-agent to the SDK's VERSION.
-#   4. Create venv, run `uv pip install -e '.[all]'`.
-#   5. Fetch Node 22 if missing (upstream installer pattern).
-#   6. npm install + playwright chromium download (cached under ~/.cache/ms-playwright).
-#   6b. Install CLI helpers (hermes-mcp-add) into ~/.local/bin.
-#   7. Write default config.yaml if absent.
-#   8. Install + enable hermes-gateway systemd user unit.
+# setup-project: write default config, provision secrets, install the gateway.
+# Idempotent. Runs as the workshop user after setup-base.
 set -euo pipefail
 
-VERSION="$(cat "$SDK/VERSION")"
-# ~/.hermes is a mount plug (persisted): config, memory, skills, sessions,
-# secrets. The rebuildable runtime lives OUTSIDE it, in the workshop sandbox,
-# so it is never written to host storage:
-#   - the clone + venv at ~/hermes-agent
-#   - bundled Node 22 at ~/.local/lib/hermes/node
-#   - uv/npm/Playwright caches at their default in-sandbox locations
-# These persist across `workshop refresh` (same container) and are rebuilt
-# only on a full recreate.
 HERMES_HOME="$HOME/.hermes"
-HERMES_SRC="$HOME/hermes-agent"
-NODE_DIR="$HOME/.local/lib/hermes/node"
-NODE_VERSION="22.11.0"  # matches upstream installer's "Node 22 LTS"
 
-# Map dpkg arch -> Node release tarball arch. Ubuntu amd64 -> Node "x64";
-# Ubuntu arm64 -> Node "arm64". Fail loudly on anything else so a future
-# (e.g. ppc64el, riscv64) workshop can't silently pull the wrong binary.
-case "$(dpkg --print-architecture)" in
-    amd64) NODE_TARBALL_ARCH="linux-x64" ;;
-    arm64) NODE_TARBALL_ARCH="linux-arm64" ;;
-    *)
-        echo "hermes-sdk: unsupported architecture $(dpkg --print-architecture)" >&2
-        exit 1
-        ;;
-esac
+mkdir -p "$HERMES_HOME/skills" "$HERMES_HOME/plugins" "$HERMES_HOME/logs" "$HERMES_HOME/secrets"
 
-mkdir -p "$HERMES_HOME"
-
-# 0. Migrate from older layouts ------------------------------------------
-# Earlier SDK versions kept the clone, venv, and Node under ~/.hermes (a
-# mounted dir, so they ended up on host storage). They now live in the
-# sandbox; drop the stale copies so the mounted home isn't bloated. These
-# paths are SDK-managed only — no user data lives in them.
-rm -rf "$HERMES_HOME/hermes-agent" "$HERMES_HOME/node"
-
-# 1. uv -------------------------------------------------------------------
-if ! command -v uv >/dev/null 2>&1; then
-    curl -fsSL https://astral.sh/uv/install.sh | sh
-fi
-export PATH="$HOME/.local/bin:$PATH"
-
-# 2. Hermes source clone / version sync -----------------------------------
-if [ ! -d "$HERMES_SRC/.git" ]; then
-    git clone --depth=1 --branch "v${VERSION}" \
-        https://github.com/NousResearch/hermes-agent.git "$HERMES_SRC"
-else
-    current_tag="$(git -C "$HERMES_SRC" describe --tags --exact-match 2>/dev/null || echo '')"
-    if [ "$current_tag" != "v${VERSION}" ]; then
-        git -C "$HERMES_SRC" fetch --tags --depth=1 origin "refs/tags/v${VERSION}:refs/tags/v${VERSION}"
-        git -C "$HERMES_SRC" -c advice.detachedHead=false checkout "v${VERSION}"
-    fi
-fi
-
-# 3. venv + Python deps ---------------------------------------------------
-cd "$HERMES_SRC"
-# Recreate the venv if it's missing OR its interpreter no longer runs (e.g. a
-# dangling symlink left after the uv-managed Python was rebuilt). Testing the
-# directory alone isn't enough — a half-present venv must be rebuilt, not
-# reused.
-if [ ! -x "$HERMES_SRC/venv/bin/python" ] || ! "$HERMES_SRC/venv/bin/python" -c '' 2>/dev/null; then
-    rm -rf "$HERMES_SRC/venv"
-    uv venv "$HERMES_SRC/venv" --python 3.11
-fi
-# UV_LINK_MODE=copy avoids hardlink errors across filesystem boundaries.
-UV_LINK_MODE=copy uv pip install -e '.[all]' --python "$HERMES_SRC/venv/bin/python"
-
-# 4. Node 22 (bundled — Ubuntu 24.04 apt ships Node 18) -------------------
-if [ ! -x "$NODE_DIR/bin/node" ]; then
-    mkdir -p "$NODE_DIR"
-    tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/node.tar.xz" \
-        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_TARBALL_ARCH}.tar.xz"
-    tar -xJf "$tmp/node.tar.xz" -C "$NODE_DIR" --strip-components=1
-    rm -rf "$tmp"
-fi
-export PATH="$NODE_DIR/bin:$PATH"
-
-# 5. npm deps + Playwright Chromium ---------------------------------------
-if [ -f "$HERMES_SRC/package.json" ]; then
-    (cd "$HERMES_SRC" && npm install --silent)
-fi
-# Playwright honours PLAYWRIGHT_BROWSERS_PATH; default location is
-# ~/.cache/ms-playwright, which lives in the workshop sandbox.
-(cd "$HERMES_SRC" && npx --yes playwright install chromium) || true
-
-# 6. Wrapper script in ~/.local/bin/hermes --------------------------------
-mkdir -p "$HOME/.local/bin"
-cat > "$HOME/.local/bin/hermes" <<'WRAPPER'
-#!/bin/bash
-# Hermes launcher — puts bundled Node 22 ahead of system Node, then execs the
-# venv entrypoint. Both live in the workshop sandbox (not under ~/.hermes).
-HERMES_SRC="$HOME/hermes-agent"
-export PATH="$HOME/.local/lib/hermes/node/bin:$PATH"
-exec "$HERMES_SRC/venv/bin/hermes" "$@"
-WRAPPER
-chmod +x "$HOME/.local/bin/hermes"
-
-# 6b. CLI helpers shipped in the SDK payload ($SDK/bin dumped to $SDK root) -
-# hermes-mcp-add edits the mcp_servers: block of config.yaml. It execs the
-# hermes venv's python (which has PyYAML) by default.
-install -D -m 755 "$SDK/hermes-mcp-add" "$HOME/.local/bin/hermes-mcp-add"
-
-# 7. Default config.yaml (only if user hasn't supplied one) ---------------
+# Default config.yaml — not overwritten on refresh.
 if [ ! -f "$HERMES_HOME/config.yaml" ]; then
     cat > "$HERMES_HOME/config.yaml" <<'CONFIG'
 # Hermes config — generated by the Workshop SDK on first launch.
 # Edit freely; subsequent refreshes won't overwrite this file.
 model:
   provider: custom
-  # REQUIRED: set to a model available on your llm-backend endpoint (e.g.
-  # qwen3.6:35b), then `workshop refresh`. Left empty on purpose — no model is
-  # defaulted, so check-health fails explicitly rather than silently running
-  # on a model that may not exist on your endpoint.
+  # REQUIRED: set to a model on your llm-backend endpoint.
   default: ""
-  # Wired through the SDK's `llm-backend` tunnel plug. Connect that plug to
-  # an Ollama-compatible OpenAI endpoint (Ollama itself, vLLM, LiteLLM, etc.)
-  # and this endpoint will resolve correctly.
   base_url: http://localhost:11434/v1
   api_key: no-key-required
-
-toolsets:
-  - all
-max_turns: 100
 
 terminal:
   backend: local
@@ -145,83 +25,20 @@ terminal:
 
 memory:
   memory_enabled: true
-  user_profile_enabled: true
-
-# Set HERMES_TAVILY_API_KEY in ~/.hermes/secrets/.env to use Tavily web search.
-web:
-  backend: tavily
-
-browser:
-  inactivity_timeout: 120
-  command_timeout: 30
 
 logging:
   level: INFO
-
-display:
-  personality: kawaii
-
-# Messaging platforms are disabled by default. Enable per platform after
-# adding the relevant credentials (TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN,
-# etc.) to ~/.hermes/secrets/.env.
-platforms: {}
-
-# MCP servers — external tool providers Hermes discovers at startup. Two
-# transports are supported; both are commented out below. Uncomment and edit
-# one, then `systemctl --user restart hermes-gateway` (or, inside `hermes
-# chat`, run `/reload-mcp`). See the SDK README "MCP servers" section.
-#
-# HTTP (a server in a SIBLING workshop, reached via the `mcp-server` tunnel
-# plug). Connect the plug to the server's HTTP slot, e.g. the affine-mcp-server
-# SDK's `affine-mcp-http`; it is then reachable at http://localhost:3000/mcp:
-#
-# mcp_servers:
-#   affine:
-#     url: http://localhost:3000/mcp
-#     # headers:
-#     #   Authorization: "Bearer ${AFFINE_MCP_HTTP_TOKEN}"   # from secrets/.env
-#     tools:
-#       resources: false
-#       prompts: false
-#
-# stdio (a server installed in the SAME workshop; Hermes spawns it as a
-# subprocess). Add the server's SDK to the same workshop.yaml so its CLI is on
-# PATH, then:
-#
-# mcp_servers:
-#   affine:
-#     command: affine-mcp
-#     # args: []
-#     env:
-#       AFFINE_TOOL_PROFILE: read_only
-#     tools:
-#       include: [list_docs, get_doc]   # whitelist; omit to expose all tools
-#       resources: false
-#       prompts: false
 CONFIG
 fi
 
-# Ensure the secrets directory and .env file exist. The directory is itself a
-# mount plug (hermes-secrets) — it may be auto-allocated by Workshop or
-# remounted by the user to a host-managed path. Either way: mkdir is a no-op
-# when already mounted, and touching .env makes the gateway's EnvironmentFile=
-# directive succeed even before credentials are populated.
-mkdir -p "$HERMES_HOME/secrets"
+# Secrets dir + .env symlink.
 touch "$HERMES_HOME/secrets/.env"
 chmod 700 "$HERMES_HOME/secrets"
 chmod 600 "$HERMES_HOME/secrets/.env"
-
-# Symlink ~/.hermes/.env -> secrets/.env so the hermes CLI (which loads
-# ~/.hermes/.env directly) sees the same credentials as the gateway service.
-# Migrate any pre-existing real .env file from older SDK versions.
-if [ -e "$HERMES_HOME/.env" ] && [ ! -L "$HERMES_HOME/.env" ]; then
-    cat "$HERMES_HOME/.env" >> "$HERMES_HOME/secrets/.env"
-    rm "$HERMES_HOME/.env"
-fi
 ln -sfn secrets/.env "$HERMES_HOME/.env"
 
-# 8. Install + enable gateway systemd user unit ---------------------------
+# Gateway systemd user service — install and enable; user starts after configuring.
 install -D --mode=644 --target-directory "$HOME/.config/systemd/user" \
     "$SDK/hermes-gateway.service"
 systemctl --user daemon-reload
-systemctl --user enable --now hermes-gateway.service || true
+systemctl --user enable hermes-gateway.service
