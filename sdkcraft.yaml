@@ -8,7 +8,7 @@ description: |
   Slack, Signal, Email) via its gateway daemon.
 
   Hermes ships with a pre-built Python virtual environment inside the SDK.
-  Config and state (~/.hermes) and secrets (.env) persist via mount plugs.
+  Config and state (~/.hermes) and secrets (.env) persist via the hermes-home mount plug.
   The gateway runs as a systemd user unit; the LLM backend is consumed
   through the llm-backend tunnel plug (Ollama-compatible by default).
 
@@ -33,19 +33,6 @@ plugs:
   hermes-home:
     interface: mount
     workshop-target: /home/workshop/.hermes
-    mode: 0o700
-
-  # Secrets directory — a separate, narrower mount so the host can manage just
-  # the `.env` file (agenix/sops/plain-file) without owning the rest of the
-  # ~/.hermes state tree. Default: Workshop auto-allocates storage and the user
-  # enters credentials with `workshop shell`. Override:
-  # `workshop remount <ws>/hermes-agent:hermes-secrets <host-path>` to point at a
-  # host-managed directory containing `.env`. setup-project symlinks
-  # ~/.hermes/.env -> secrets/.env so the gateway unit and the hermes CLI find
-  # the same file.
-  hermes-secrets:
-    interface: mount
-    workshop-target: /home/workshop/.hermes/secrets
     mode: 0o700
 
   # LLM backend tunnel — wire to an Ollama workshop or host port. Default

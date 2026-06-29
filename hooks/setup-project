@@ -26,7 +26,8 @@ logging:
 CONFIG
 fi
 
-# Secrets dir + .env symlink.
+# Secrets live in a plain subdir (not a mount) so Hermes atomic-writes stay on
+# the same device as ~/.hermes and cross-device rename errors are avoided.
 touch "$HERMES_HOME/secrets/.env"
 chmod 700 "$HERMES_HOME/secrets"
 chmod 600 "$HERMES_HOME/secrets/.env"
