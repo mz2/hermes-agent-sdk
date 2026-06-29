@@ -1,4 +1,3 @@
-#!/usr/bin/bash
 # restore-state must be best-effort only.
 trap 'exit 0' ERR
 

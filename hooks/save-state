@@ -1,4 +1,3 @@
-#!/usr/bin/bash
 # save-state must never block a refresh, even in a broken container.
 trap 'exit 0' ERR
 

@@ -1,6 +1,3 @@
-#!/usr/bin/bash
-set -euo pipefail
-
 apt-get update
 apt-get install ca-certificates curl git ripgrep ffmpeg \
     libffi-dev libolm-dev procps openssh-client

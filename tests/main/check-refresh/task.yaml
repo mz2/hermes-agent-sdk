@@ -20,11 +20,11 @@ execute: |
   workshop exec -- systemctl --user is-active hermes-gateway.service | MATCH '^active$'
 
   echo "[4/4] hermes still works after refresh"
-  workshop exec -- command -v hermes | MATCH '/hermes$'
+  workshop exec -- hermes --version | MATCH '^Hermes Agent v'
 
   echo "ALL PASS"
 
 debug: |
   workshop exec -- systemctl --user status hermes-gateway.service --no-pager --lines=40 || true
-  workshop exec -- command -v hermes || true
+  workshop exec -- hermes --version || true
   workshop tasks
