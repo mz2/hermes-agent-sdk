@@ -1,0 +1,30 @@
+summary: Refresh preserves active hermes gateway service state
+
+prepare: |
+  envsubst '${BASE}' <workshop.yaml.in >workshop.yaml
+  workshop launch
+
+restore: |
+  workshop remove || true
+
+execute: |
+  echo "[1/4] gateway starts and becomes active before refresh"
+  workshop exec -- systemctl --user start hermes-gateway.service
+  workshop exec -- systemctl --user is-active hermes-gateway.service | MATCH '^active$'
+
+  echo "[2/4] change workshop definition and refresh"
+  envsubst '${BASE}' <workshop.refresh.yaml.in >workshop.yaml
+  workshop refresh
+
+  echo "[3/4] gateway is restored active after refresh"
+  workshop exec -- systemctl --user is-active hermes-gateway.service | MATCH '^active$'
+
+  echo "[4/4] hermes still works after refresh"
+  workshop exec -- command -v hermes | MATCH '/hermes$'
+
+  echo "ALL PASS"
+
+debug: |
+  workshop exec -- systemctl --user status hermes-gateway.service --no-pager --lines=40 || true
+  workshop exec -- command -v hermes || true
+  workshop tasks
