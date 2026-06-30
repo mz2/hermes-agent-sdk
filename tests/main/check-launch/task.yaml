@@ -21,6 +21,7 @@ execute: |
   echo "ALL PASS"
 
 debug: |
+  workshop tasks
   workshop exec -- hermes --version || true
   workshop exec -- hermes gateway status || true
   workshop exec -- systemctl --user status hermes-gateway.service --no-pager --lines=40 || true
