@@ -1,0 +1,11 @@
+# save-state must never block a refresh, even in a broken container.
+trap 'exit 0' ERR
+
+[ -n "${SDK_STATE_DIR:-}" ] || exit 0
+
+STATE_FILE="$SDK_STATE_DIR/hermes-gateway.was-active"
+rm -f "$STATE_FILE"
+
+if systemctl --user is-active --quiet hermes-gateway.service; then
+    : > "$STATE_FILE"
+fi

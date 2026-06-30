@@ -1,8 +1,3 @@
-#!/usr/bin/bash
-# setup-project: write default config, provision secrets, install the gateway.
-# Idempotent. Runs as the workshop user after setup-base.
-set -euo pipefail
-
 HERMES_HOME="$HOME/.hermes"
 
 mkdir -p "$HERMES_HOME/skills" "$HERMES_HOME/plugins" "$HERMES_HOME/logs" "$HERMES_HOME/secrets"
@@ -31,14 +26,19 @@ logging:
 CONFIG
 fi
 
-# Secrets dir + .env symlink.
+# Secrets live in a plain subdir (not a mount) so Hermes atomic-writes stay on
+# the same device as ~/.hermes and cross-device rename errors are avoided.
 touch "$HERMES_HOME/secrets/.env"
 chmod 700 "$HERMES_HOME/secrets"
 chmod 600 "$HERMES_HOME/secrets/.env"
 ln -sfn secrets/.env "$HERMES_HOME/.env"
 
-# Gateway systemd user service — install and enable; user starts after configuring.
-install -D --mode=644 --target-directory "$HOME/.config/systemd/user" \
-    "$SDK/hermes-gateway.service"
-systemctl --user daemon-reload
-systemctl --user enable hermes-gateway.service
+# Register the gateway service via Hermes itself so the installed unit always
+# matches the current upstream-generated definition. Called via $SDK/bin/hermes
+# (not the /usr/local/bin symlink) so the uv venv resolves hermes_cli correctly
+# during the hook, before the login-shell PATH is fully active.
+# Only supports interactive mode at the moment — feed answers via stdin.
+"$SDK/bin/hermes" gateway install <<'EOF'
+Y
+Y
+EOF

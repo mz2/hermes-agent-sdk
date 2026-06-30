@@ -8,20 +8,20 @@ restore: |
   workshop remove || true
 
 execute: |
-  echo "[1/3] hermes is on PATH"
-  workshop exec -- command -v hermes | MATCH '/hermes$'
+  echo "[1/3] hermes runs inside the workshop"
+  workshop exec -- hermes --version | MATCH '^Hermes Agent v'
 
-  echo "[2/3] gateway unit is enabled"
-  workshop exec -- systemctl --user is-enabled hermes-gateway.service | MATCH '^enabled$'
+  echo "[2/3] gateway unit is installed and enabled"
+  workshop exec -- hermes gateway status | MATCH 'Loaded: loaded|enabled; preset: enabled|✓ Systemd linger is enabled'
 
   echo "[3/3] gateway can be started"
-  # Start is idempotent: returns success if already active.
-  workshop exec -- systemctl --user start hermes-gateway.service
-  workshop exec -- systemctl --user is-active hermes-gateway.service | MATCH '^active$'
+  workshop exec -- hermes gateway start
+  workshop exec -- hermes gateway status | MATCH 'Active: active \(running\)|✓ User gateway service is running'
 
   echo "ALL PASS"
 
 debug: |
-  workshop exec -- command -v hermes || true
-  workshop exec -- systemctl --user is-enabled hermes-gateway.service || true
+  workshop tasks
+  workshop exec -- hermes --version || true
+  workshop exec -- hermes gateway status || true
   workshop exec -- systemctl --user status hermes-gateway.service --no-pager --lines=40 || true

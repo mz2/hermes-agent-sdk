@@ -12,13 +12,8 @@ experience, maintains persistent memory, and bridges to messaging platforms
 - Pre-built Hermes runtime in the SDK payload (no Python env bootstrap at launch)
 - Persistent agent state in `~/.hermes` via mount plugs
 - Separate persistent secrets mount at `~/.hermes/secrets`
-- A systemd user service (`hermes-gateway.service`) for the gateway
+- Gateway service management via `hermes gateway install` / `start` / `restart`
 - Tunnel plugs for LLM (`11434`) and optional external memory backend (`8000`)
-
-Supported bases:
-
-- `ubuntu@24.04` (amd64, arm64)
-- `ubuntu@26.04` (amd64, arm64)
 
 ## Quick Start
 
@@ -82,6 +77,9 @@ Credentials live in:
 
 `setup-project` symlinks `~/.hermes/.env` to `secrets/.env` so both the CLI and
 the gateway service use the same file.
+
+The SDK registers the gateway service through `hermes gateway install` so the
+installed unit matches Hermes' current generated definition.
 
 ## Interfaces
 

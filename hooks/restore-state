@@ -1,0 +1,11 @@
+# restore-state must be best-effort only.
+trap 'exit 0' ERR
+
+[ -n "${SDK_STATE_DIR:-}" ] || exit 0
+
+STATE_FILE="$SDK_STATE_DIR/hermes-gateway.was-active"
+[ -f "$STATE_FILE" ] || exit 0
+
+# The unit is installed/enabled by setup-project. Only restart it on refresh
+# when it had been active before refresh.
+systemctl --user start hermes-gateway.service || true

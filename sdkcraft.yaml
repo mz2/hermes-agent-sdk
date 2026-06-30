@@ -8,7 +8,7 @@ description: |
   Slack, Signal, Email) via its gateway daemon.
 
   Hermes ships with a pre-built Python virtual environment inside the SDK.
-  Config and state (~/.hermes) and secrets (.env) persist via mount plugs.
+  Config and state (~/.hermes) and secrets (.env) persist via the hermes-home mount plug.
   The gateway runs as a systemd user unit; the LLM backend is consumed
   through the llm-backend tunnel plug (Ollama-compatible by default).
 
@@ -33,19 +33,6 @@ plugs:
   hermes-home:
     interface: mount
     workshop-target: /home/workshop/.hermes
-    mode: 0o700
-
-  # Secrets directory — a separate, narrower mount so the host can manage just
-  # the `.env` file (agenix/sops/plain-file) without owning the rest of the
-  # ~/.hermes state tree. Default: Workshop auto-allocates storage and the user
-  # enters credentials with `workshop shell`. Override:
-  # `workshop remount <ws>/hermes-agent:hermes-secrets <host-path>` to point at a
-  # host-managed directory containing `.env`. setup-project symlinks
-  # ~/.hermes/.env -> secrets/.env so the gateway unit and the hermes CLI find
-  # the same file.
-  hermes-secrets:
-    interface: mount
-    workshop-target: /home/workshop/.hermes/secrets
     mode: 0o700
 
   # LLM backend tunnel — wire to an Ollama workshop or host port. Default
@@ -87,6 +74,8 @@ parts:
       - astral-uv
     build-environment:
       - UV_NO_EDITABLE: "1"
+      - UV_PYTHON_DOWNLOADS: "manual"
+      - UV_PYTHON_PREFERENCE: "managed"
     build-packages:
       - curl
       - ca-certificates
@@ -94,13 +83,8 @@ parts:
       - gcc
       - g++
       - make
-      - python3-dev
       - libffi-dev
       - libolm-dev
-    uv-extras:
-      - messaging
-      - web
-      - cron
     override-pull: |
       # VERSION is the GitHub release tag (date-based, e.g. 2026.6.19).
       # The PyPI package version (e.g. 0.17.0) lives inside pyproject.toml.
@@ -111,14 +95,19 @@ parts:
       tar -xzf hermes.tar.gz --strip-components=1 -C "$CRAFT_PART_SRC"
       rm hermes.tar.gz
     override-build: |
-      craftctl default
-      SYSPYTHON=$(realpath /usr/bin/python3)
-      PYVER=$(basename "$SYSPYTHON")
-      ln -f -s "$SYSPYTHON" "$CRAFT_PART_INSTALL/bin/$PYVER"
-      ln -f -s "$SYSPYTHON" "$CRAFT_PART_INSTALL/bin/python3"
-      ln -f -s "$SYSPYTHON" "$CRAFT_PART_INSTALL/bin/python"
-
-  services:
-    plugin: dump
-    source: services
-    source-type: local
+      # Bundle uv-managed Python 3.12 inside the SDK — fully self-contained,
+      # no system Python required at runtime on any base.
+      # Do NOT call craftctl default: the uv plugin's built-in venv step
+      # always rewrites bin/python* to the snap-internal path which is dead
+      # inside a workshop. We do everything manually instead.
+      export UV_PYTHON_INSTALL_DIR="$CRAFT_PART_INSTALL/python-runtime"
+      uv python install 3.12
+      PYTHON=$(uv python find 3.12)
+      uv venv --allow-existing --relocatable --python "$PYTHON" "$CRAFT_PART_INSTALL"
+      PYTHON_REL=$(realpath --relative-to="$CRAFT_PART_INSTALL/bin" "$PYTHON")
+      ln -snf "$PYTHON_REL" "$CRAFT_PART_INSTALL/bin/python"
+      ln -snf python "$CRAFT_PART_INSTALL/bin/python3"
+      ln -snf python "$CRAFT_PART_INSTALL/bin/python3.12"
+      VIRTUAL_ENV="$CRAFT_PART_INSTALL" \
+        uv sync --no-dev --no-editable --reinstall \
+          --extra messaging --extra web --extra cron
