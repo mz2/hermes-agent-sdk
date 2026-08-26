@@ -48,7 +48,7 @@ jobs:
 
       - name: Upload amd64 SDK
         env:
-          SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
+          SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_PROD }}
         run: |
           for sdk in *.sdk; do
             sdkcraft --verbose upload "$sdk" --release "${TRACK}/stable"
@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload arm64 SDK
         env:
-          SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_STAGING }}
+          SDKCRAFT_STORE_CREDENTIALS: ${{ secrets.SDKCRAFT_STORE_CREDENTIALS_PROD }}
         run: |
           for sdk in *.sdk; do
             sdkcraft --verbose upload "$sdk" --release "${TRACK}/stable"
