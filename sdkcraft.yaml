@@ -109,5 +109,6 @@ parts:
       ln -snf python "$CRAFT_PART_INSTALL/bin/python3"
       ln -snf python "$CRAFT_PART_INSTALL/bin/python3.12"
       VIRTUAL_ENV="$CRAFT_PART_INSTALL" \
-        uv sync --no-dev --no-editable --reinstall \
+        HERMES_NIX_BUILD=1 \
+        uv sync --frozen --no-dev --no-editable \
           --extra messaging --extra web --extra cron
