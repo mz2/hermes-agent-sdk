@@ -8,8 +8,9 @@
       "managerFilePatterns": ["/^VERSION$/"],
       "matchStrings": ["(?<currentValue>[0-9.]+)"],
       "depNameTemplate": "NousResearch/hermes-agent",
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "pep440"
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v?(?<version>.+)$",
+      "versioningTemplate": "loose"
     }
   ],
   "baseBranchPatterns": ["latest"],
