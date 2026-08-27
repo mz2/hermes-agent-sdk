@@ -7,15 +7,16 @@
       "customType": "regex",
       "managerFilePatterns": ["/^VERSION$/"],
       "matchStrings": ["(?<currentValue>[0-9.]+)"],
-      "depNameTemplate": "hermes-agent",
-      "datasourceTemplate": "pypi",
-      "versioningTemplate": "pep440"
+      "depNameTemplate": "NousResearch/hermes-agent",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v?(?<version>.+)$",
+      "versioningTemplate": "loose"
     }
   ],
   "baseBranchPatterns": ["latest"],
   "packageRules": [
     {
-      "matchPackageNames": ["hermes-agent"],
+      "matchPackageNames": ["NousResearch/hermes-agent"],
       "matchBaseBranches": ["latest"]
     }
   ]
