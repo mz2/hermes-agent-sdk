@@ -5,6 +5,7 @@ prime/
 stage/
 .snapcraft/
 .sdkcraft/
+.spread-reuse.yaml
 
 # workshop per-project lock (machine-local; never commit)
 .workshop.lock
