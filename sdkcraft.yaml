@@ -103,7 +103,8 @@ parts:
       export UV_PYTHON_INSTALL_DIR="$CRAFT_PART_INSTALL/python-runtime"
       uv python install 3.12
       PYTHON=$(uv python find 3.12)
-      uv venv --allow-existing --relocatable --python "$PYTHON" "$CRAFT_PART_INSTALL"
+      # --seed pre-installs pip so Workshop finds it and skips ensurepip.
+      uv venv --seed --allow-existing --relocatable --python "$PYTHON" "$CRAFT_PART_INSTALL"
       PYTHON_REL=$(realpath --relative-to="$CRAFT_PART_INSTALL/bin" "$PYTHON")
       ln -snf "$PYTHON_REL" "$CRAFT_PART_INSTALL/bin/python"
       ln -snf python "$CRAFT_PART_INSTALL/bin/python3"
@@ -112,3 +113,18 @@ parts:
         HERMES_NIX_BUILD=1 \
         uv sync --frozen --no-dev --no-editable \
           --extra messaging --extra web --extra cron
+      # Redirect pip installs to the writable hermes-home location at runtime.
+      # pip reads this as the site-level config (sys.prefix/pip.conf) when
+      # invoked via the SDK's python3 binary.
+      cat > "$CRAFT_PART_INSTALL/pip.conf" <<'PIPCONF'
+      [install]
+      target = /home/workshop/.hermes/site-packages
+      PIPCONF
+
+      # Make ~/.hermes/site-packages discoverable at Python startup.
+      cat > "$CRAFT_PART_INSTALL/lib/python3.12/site-packages/sitecustomize.py" <<'PYEOF'
+      import os, sys
+      _site = os.path.join(os.environ.get("HERMES_HOME", "/home/workshop/.hermes"), "site-packages")
+      if _site not in sys.path:
+          sys.path.insert(0, _site)
+      PYEOF
