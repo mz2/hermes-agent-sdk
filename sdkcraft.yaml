@@ -72,6 +72,7 @@ parts:
     source: .
     build-snaps:
       - astral-uv
+      - node/22/stable
     build-environment:
       - UV_NO_EDITABLE: "1"
       - UV_PYTHON_DOWNLOADS: "manual"
@@ -109,10 +110,20 @@ parts:
       ln -snf "$PYTHON_REL" "$CRAFT_PART_INSTALL/bin/python"
       ln -snf python "$CRAFT_PART_INSTALL/bin/python3"
       ln -snf python "$CRAFT_PART_INSTALL/bin/python3.12"
+      # Single root npm install covers all workspaces (web, ui-tui, apps/shared).
+      cd "$CRAFT_PART_SRC"
+      npm install
+      npm run build --workspace web
+      npm run build --workspace ui-tui
       VIRTUAL_ENV="$CRAFT_PART_INSTALL" \
         HERMES_NIX_BUILD=1 \
         uv sync --frozen --no-dev --no-editable \
           --extra messaging --extra web --extra cron
+      # web_dist and tui_dist are absent from upstream package-data; copy manually.
+      cp -r "$CRAFT_PART_SRC/hermes_cli/web_dist" \
+        "$CRAFT_PART_INSTALL/lib/python3.12/site-packages/hermes_cli/"
+      install -D "$CRAFT_PART_SRC/ui-tui/dist/entry.js" \
+        "$CRAFT_PART_INSTALL/lib/python3.12/site-packages/hermes_cli/tui_dist/entry.js"
       # Redirect pip installs to the writable hermes-home location at runtime.
       # pip reads this as the site-level config (sys.prefix/pip.conf) when
       # invoked via the SDK's python3 binary.
