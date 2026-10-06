@@ -18,8 +18,19 @@ execute: |
   workshop exec -- hermes gateway start
   workshop exec -- hermes gateway status | MATCH 'Active: active \(running\)|✓ User gateway service is running'
 
-  echo "[4/4] pyproject.toml ships next to hermes_cli (plugin installs need it)"
-  workshop exec -- test -f /var/lib/workshop/sdk/hermes-agent/lib/python3.12/site-packages/pyproject.toml
+  echo "[4/4] a plugin declaring Python deps installs (hermes reads its own pyproject.toml)"
+  # The probe-plugin fixture is mounted at /project/probe-plugin; git-init it in
+  # place so the file:// installer can clone it. Without the shipped
+  # pyproject.toml, dependency admission aborts with FileNotFoundError.
+  workshop exec -- bash -lc '
+    set -euo pipefail
+    cd /project/probe-plugin
+    git init -q
+    git -c user.email=sdk@test -c user.name=sdk add -A
+    git -c user.email=sdk@test -c user.name=sdk commit -qm probe
+    hermes plugins install "file://$PWD" --enable --yes-deps
+  '
+  workshop exec -- hermes plugins list --enabled --plain | MATCH 'sdk-pyproject-probe'
 
   echo "ALL PASS"
 
@@ -28,3 +39,4 @@ debug: |
   workshop exec -- hermes --version || true
   workshop exec -- hermes gateway status || true
   workshop exec -- systemctl --user status hermes-gateway.service --no-pager --lines=40 || true
+  workshop exec -- hermes plugins list --plain || true
