@@ -119,6 +119,10 @@ parts:
         HERMES_NIX_BUILD=1 \
         uv sync --frozen --no-dev --no-editable \
           --extra messaging --extra web --extra cron
+      # Plugin installs read Hermes' own pyproject.toml from the directory above
+      # hermes_cli/ to constrain plugin dependencies; it is not in the wheel.
+      install -m 644 "$CRAFT_PART_SRC/pyproject.toml" \
+        "$CRAFT_PART_INSTALL/lib/python3.12/site-packages/pyproject.toml"
       # web_dist and tui_dist are absent from upstream package-data; copy manually.
       cp -r "$CRAFT_PART_SRC/hermes_cli/web_dist" \
         "$CRAFT_PART_INSTALL/lib/python3.12/site-packages/hermes_cli/"

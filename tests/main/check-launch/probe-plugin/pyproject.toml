@@ -1,0 +1,8 @@
+[project]
+name = "sdk-pyproject-probe"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = ["six>=1.16,<2"]
+
+[tool.uv]
+package = false
